@@ -700,6 +700,15 @@ struct HarborSection: View {
                     }
                 }
             }
+            Toggle("Park new screenshots", isOn: Binding(
+                get: { UserDefaults.standard.object(forKey: ShotWatch.watchShotsKey) as? Bool ?? true },
+                set: { UserDefaults.standard.set($0, forKey: ShotWatch.watchShotsKey) }
+            ))
+            .font(.system(size: 11.5))
+            .foregroundStyle(.white.opacity(0.7))
+            .toggleStyle(.switch)
+            .tint(.orange)
+            .accessibilityLabel("Automatically park new screenshots from the Desktop")
         }
     }
 

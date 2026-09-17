@@ -466,7 +466,6 @@ closure removed. No behavior change; matrix green.
 ---
 
 # Phase 5 (final) — org site, redirect, About (supersedes the above target)
-
 - Naming settled: org https://github.com/notcherapp (live, id verified),
   site repo notcherapp/notcherapp.github.io (exact name, was public + EMPTY
   at takeover). Stray-dash rename noted per directive: always push to the
@@ -484,3 +483,51 @@ closure removed. No behavior change; matrix green.
 - README pitch rewrite + brand-surface site upgrade committed on main;
   product code untouched for the entire phase (verified: working tree shows
   only docs/site/README commits since v0.2.1).
+
+---
+
+# Phase 6/7 roadmap — argued expansion (constitution amended per item)
+
+Thesis test for every candidate: does it make something wash in, recede, or
+bridge the two devices — without becoming a widget? Rejected on sight:
+stats, weather, launcher, clipboard, lyrics (widget pile, unchanged).
+
+## SHIPPED in 0.3.0
+
+1. **Screenshot Harbor auto-park.** Screenshots are the purest "things wash
+   in" event on a Mac: user presses keys, an image lands on the Desktop, the
+   notch glows and parks it. Implemented as a single O_EVTONLY fd +
+   DispatchSource on ~/Desktop, image extensions only, seen-set dedup, Harbor
+   toggle (default on). NOT-built amendment: background observation is now
+   allowed iff it is (a) single user-visible directory, (b) user-created
+   artifacts only, (c) explicitly toggleable, (d) local-only. Fully
+   headless-testable (write PNG → Harbor grows → delete → clean).
+2. **Wake timer truth.** A running timer survives sleep via wall-clock
+   deadline already; now waking to an active timer flashes what is left.
+   Three lines in the existing wake observer, proven flash path. The wake
+   trigger itself is code-reviewed (a dev session cannot sleep the machine).
+
+## DEFERRED with reasons
+
+- **SPAKE2.** Correct next crypto step, but it needs protocol versioning +
+   migration (old Mac + new iPhone must fail LOUD, not weird). Big, risky,
+   and the current code-over-TLS-shaped-AES has no known-abuse profile for
+   a same-room pairing UX. After 0.3.0, with a versioned handshake design.
+- **iPhone Live Activity mirror.** Requires iOS hardware to verify; will
+   not ship unverified animations against a protocol I cannot test.
+- **Connection-quality indicator.** Needs sustained traffic to mean anything;
+   heartbeats every 5 s make any meter a liar most of the time. Revisit when
+   there is real continuous sync to measure.
+- **Multi-display islands.** Cannot test hot-plug here; shipping untested
+   window surgery on other people's display topologies is how flicker
+   regressions are born. Main-display-only stays documented.
+
+## Self-assessment (as ordered)
+
+Against getdroppycode.app: our install window now has art + layout + inline
+guidance (their polish bar: met on structure, behind on illustration —
+programmatic art is clean but not lush). Against boring.notch: README now
+matches on warmth and honesty while refusing the sprawl; product beats it
+on coherence (one waterline vs. widget grid) and loses on breadth (by
+choice). Next to raise: HN-proof social surfaces (og-tested already) and,
+after hardware, the iPhone story told in motion rather than paragraphs.

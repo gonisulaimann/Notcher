@@ -46,7 +46,7 @@ case "stress", "persistence", "poweredge", "naming", "firstrun":
     print(Probe.failures == 0 ? "PROBE DONE, ALL PASS" : "PROBE DONE, \(Probe.failures) FAILURE(S)")
     fflush(stdout)
     exit(Probe.failures == 0 ? 0 : 1)
-case "storm", "sendfile", "reconnect", "taptest", "cleanup":
+case "storm", "sendfile", "reconnect", "taptest", "cleanup", "shotwatch":
     Task {
         await Probe.runAsync(mode: probeMode)
         print(Probe.failures == 0 ? "PROBE DONE, ALL PASS" : "PROBE DONE, \(Probe.failures) FAILURE(S)")
@@ -63,7 +63,7 @@ case "samplesteady":
     print(Probe.failures == 0 ? "PROBE DONE, ALL PASS" : "PROBE DONE, \(Probe.failures) FAILURE(S)")
     exit(Probe.failures == 0 ? 0 : 1)
 default:
-    print("usage: NotcherProbe storm|sendfile|cleanup|samplesteady|taptest|stress|persistence|poweredge|naming|firstrun|reconnect")
+    print("usage: NotcherProbe storm|sendfile|cleanup|shotwatch|samplesteady|taptest|stress|persistence|poweredge|naming|firstrun|reconnect")
     exit(2)
 }
 
@@ -82,8 +82,41 @@ struct Probe {
         case "reconnect": await reconnect()
         case "taptest": await taptest()
         case "cleanup": cleanup()
+        case "shotwatch": await shotwatch()
         default: break
         }
+    }
+
+    /// End-to-end screenshot wash: writes a real PNG to the live Desktop and
+    /// proves the running app parks it in Harbor (observed via its store).
+    /// Requires the live app (with ShotWatch) running. Cleans up after itself.
+    static func shotwatch() async {
+        let fm = FileManager.default
+        let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Notcher/harbor.json")
+        func parked() -> Bool {
+            guard let d = try? Data(contentsOf: support),
+                  let s = String(data: d, encoding: .utf8)
+            else { return false }
+            return s.contains("notcher-probe-shot.png")
+        }
+        let url = fm.urls(for: .desktopDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("notcher-probe-shot.png")
+        // Minimal valid 1x1 PNG.
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+                        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+                        0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+                        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+                        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82])
+        try? png.write(to: url, options: .atomic)
+        var ok = false
+        for _ in 0 ..< 40 {
+            try? await Task.sleep(for: .milliseconds(250))
+            if parked() { ok = true; break }
+        }
+        try? fm.removeItem(at: url)
+        check(ok, "shotwatch desktop PNG parks in Harbor")
     }
 
     /// Quarantine enforcement: every probe artifact matches a known prefix;

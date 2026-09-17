@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var power = PowerEngine()
     private var harbor = HarborStore()
     private var link = LinkHost()
+    private var shots = ShotWatch()
     private var controller: IslandController?
     private var statusItem: NSStatusItem?
     private var bag = Set<AnyCancellable>()
@@ -172,6 +173,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         engineChanged()
         link.start()
+        shots.isEnabled = UserDefaults.standard.object(forKey: ShotWatch.watchShotsKey) as? Bool ?? true
+        shots.onShot = { [weak self] url in
+            guard let self else { return }
+            guard UserDefaults.standard.object(forKey: ShotWatch.watchShotsKey) as? Bool ?? true else { return }
+            if self.harbor.add(urls: [url]) > 0 {
+                self.island.showFlash(icon: "photo.fill", text: "Parked \(url.lastPathComponent)")
+            }
+        }
         firstRunMoment()
     }
 
@@ -206,6 +215,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         IslandDebug.log("system woke, restarting link")
         link.stop()
         link.start()
+        // A running timer survived on wall-clock deadline; say what is left.
+        if timer.isActive {
+            island.showFlash(icon: "timer",
+                             text: "Timer: \(TimerFormat.string(timer.remaining)) left",
+                             seconds: 5)
+        }
     }
 
     func applicationWillTerminate(_: Notification) {
