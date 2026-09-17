@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "Notcher", targets: ["Notcher"]),
-        .executable(name: "notcher", targets: ["notcher"]),
+        .executable(name: "notcher-cli", targets: ["notcher-cli"]),
         .library(name: "LinkCore", targets: ["LinkCore"]),
         .library(name: "NotcherKit", targets: ["NotcherKit"]),
     ],
@@ -25,9 +25,13 @@ let package = Package(
             dependencies: ["NotcherKit", "LinkCore"],
             path: "Sources/Notcher"
         ),
-        // IslandKit CLI: blocking on nothing, links AppKit only for open().
+        // IslandKit CLI. Built as `notcher-cli` (NOT `notcher`): macOS
+        // filesystems are usually case-insensitive, so a `notcher` product
+        // would collide with and overwrite the `Notcher` app binary in the
+        // build directory — observed live. install-cli.sh installs it AS
+        // `notcher`, so the hero UX is unaffected.
         .executableTarget(
-            name: "notcher",
+            name: "notcher-cli",
             path: "CLI"
         ),
         // Offscreen snapshot harness for visual inspection (renders the real

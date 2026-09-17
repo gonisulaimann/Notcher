@@ -7,8 +7,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PREFIX="/usr/local"
 if [[ "${1:-}" == "--prefix" && -n "${2:-}" ]]; then PREFIX="$2"; fi
 cd "$ROOT"
-swift build -c release --product notcher
-BIN="$ROOT/.build/release/notcher"
+swift build -c release --product notcher-cli
+BIN="$ROOT/.build/release/notcher-cli"
 if [[ ! -x "$PREFIX/bin" ]]; then
   echo "creating $PREFIX/bin (may ask for sudo)"
   sudo mkdir -p "$PREFIX/bin"
