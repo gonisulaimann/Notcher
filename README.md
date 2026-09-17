@@ -5,18 +5,28 @@ Drag files onto the notch to park them. Pair your iPhone over the local
 network and flick a timer across. When nothing is alive, the island melts
 into the camera housing. No widgets. No cloud. No noise.
 
-![Expanded island tray](docs/images/notcher-expanded-dark.png)
+![Notcher island tray](docs/images/notcher-expanded-dark.png)
 
-![Timer pill](docs/images/notcher-compact-timer.png)
-![iPhone timer mirror](docs/images/notcher-compact-remote.png)
-![Now Playing pill](docs/images/notcher-compact-media.png)
+[![Release](https://img.shields.io/github/v/release/gonisulaimann/Notcher)](https://github.com/gonisulaimann/Notcher/releases)
+[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)](https://github.com/gonisulaimann/Notcher/releases)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+| Timer pill | iPhone mirror |
+|---|---|
+| ![Timer pill](docs/images/notcher-compact-timer.png) | ![iPhone timer mirror](docs/images/notcher-compact-remote.png) |
+| *Your countdown, always in view.* | *Your iPhone's timer, ticking in the notch.* |
+
+| Now Playing | Idle blend |
+|---|---|
+| ![Now Playing pill](docs/images/notcher-compact-media.png) | ![Idle notch blend](docs/images/notcher-idle.png) |
+| *What's playing, one glance.* | *Nothing alive: melted into the housing.* |
 
 ## Install
 
 **You need:** macOS 14 or later, and a MacBook with a notch
 (no notch? it falls back to a floating capsule).
 
-1. Download **Notcher-0.2.1.dmg** from
+1. Download **Notcher-0.3.0.dmg** from
    [Releases](https://github.com/gonisulaimann/Notcher/releases).
 2. Open the DMG and drag Notcher into Applications.
 3. The first-launch warning is EXPECTED — the build is ad-hoc signed, and

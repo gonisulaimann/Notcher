@@ -465,8 +465,7 @@ closure removed. No behavior change; matrix green.
 
 ---
 
-# Phase 5 (final) — org site, redirect, About (supersedes the above target)
-- Naming settled: org https://github.com/notcherapp (live, id verified),
+# Phase 5 (final) — org site, redirect, About (supersedes the above target)- Naming settled: org https://github.com/notcherapp (live, id verified),
   site repo notcherapp/notcherapp.github.io (exact name, was public + EMPTY
   at takeover). Stray-dash rename noted per directive: always push to the
   exact name; never trust a redirecting URL for writes. @Notcher squat:
@@ -531,3 +530,28 @@ matches on warmth and honesty while refusing the sprawl; product beats it
 on coherence (one waterline vs. widget grid) and loses on breadth (by
 choice). Next to raise: HN-proof social surfaces (og-tested already) and,
 after hardware, the iPhone story told in motion rather than paragraphs.
+
+---
+
+# 0.3.0 release evidence
+
+- First-contact findings all closed: dressed DMG (generated art, Finder
+  spatial layout verified by read-back, no loose files), Keep-Both defused
+  (art instruction + app-side alert tested live with synthetic dismiss),
+  first-run welcome + translocation guidance (decision matrix probed 6/6).
+- Hygiene closed: VERSION single-sourced (release.sh writes back), 35-file
+  probe residue removed, probe quarantine (`cleanup` mode + namespaced
+  artifacts + naming regression 5/5), README banner/badges/captioned gallery.
+- Expansion shipped: screenshot auto-park (end-to-end: Desktop PNG → Harbor,
+  probe PASS) + wake timer truth (trigger code-reviewed, flash path proven).
+  NOT-built list amended for background observation (single dir,
+  user-created, toggleable, local-only). Deferred with reasons: SPAKE2
+  (needs versioned handshake design), Live Activity (no iOS hardware),
+  connection-quality (nothing continuous to measure), multi-display
+  (untestable window surgery declined).
+- Release: tag v0.3.0, GitHub Release with DMG + sha256, installed copy
+  verified reporting 0.3.0 with live island. Site + README download links
+  repointed to 0.3.0.
+- Matrix at release: self-test 8/8; stress 12/12; persistence 4/4;
+  reconnect 2/2; poweredge 4/4; naming 5/5; firstrun 6/6; shotwatch live
+  PASS; snapshots re-rendered (Harbor toggle verified visually).
