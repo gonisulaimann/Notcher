@@ -25,13 +25,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         // Single instance: the repo copy and an installed copy share one
-        // bundle id (and one island). A second launch would stack two
-        // islands over the same notch, so the newcomer stands down.
+        // bundle id (and one island). Same-path double launch quits quietly;
+        // a DIFFERENT path means a Keep-Both duplicate — explain, offer to
+        // reveal it, then stand down instead of silently dying.
         let me = ProcessInfo.processInfo.processIdentifier
+        let myURL = Bundle.main.bundleURL.standardizedFileURL
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: "dev.notcher.Notcher")
             .filter { $0.processIdentifier != me }
-        if !others.isEmpty {
-            NSLog("[notcher] another instance is already running; this launch quits")
+        if let other = others.first {
+            let otherURL = other.bundleURL?.standardizedFileURL
+            if otherURL == nil || otherURL != myURL {
+                NSApp.setActivationPolicy(.accessory)
+                NSApp.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.messageText = "Notcher is already running"
+                alert.informativeText = "Another copy is running from:\n\(otherURL?.path ?? "an unknown location")\n\nThis copy will quit. To avoid this, keep /Applications/Notcher.app and delete any duplicates."
+                alert.addButton(withTitle: "Quit This Copy")
+                alert.addButton(withTitle: "Reveal Other in Finder")
+                if alert.runModal() == .alertSecondButtonReturn,
+                   let url = otherURL
+                {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+            } else {
+                NSLog("[notcher] same-copy relaunch; standing down")
+            }
             NSApp.terminate(nil)
             return
         }
@@ -154,6 +172,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         engineChanged()
         link.start()
+        firstRunMoment()
+    }
+
+    /// The first-run moment: LSUIElement apps show no Dock icon and open
+    /// nothing, so a fresh user gets a guided tray instead of silence.
+    /// A translocated launch (running from the disk image) always guides
+    /// toward /Applications — that IS the partial-Gatekeeper path, the only
+    /// denied-adjacent state this process can ever observe (a fully denied
+    /// launch never reaches code).
+    private func firstRunMoment() {
+        let translocated = FirstRun.isTranslocated(bundlePath: Bundle.main.bundlePath)
+        let didRun = UserDefaults.standard.bool(forKey: FirstRun.didRunKey)
+        guard let action = FirstRun.plan(translocated: translocated, didRun: didRun) else { return }
+        UserDefaults.standard.set(true, forKey: FirstRun.didRunKey)
+        switch action {
+        case .welcomeTray:
+            island.presentPinned()
+            island.showFlash(icon: "water.waves",
+                             text: "Welcome to Notcher — hover the notch anytime",
+                             seconds: 8)
+        case .translocatedTray:
+            island.presentPinned()
+            island.showFlash(icon: "arrow.down.doc.fill",
+                             text: "Running from the disk image — drag Notcher to Applications",
+                             seconds: 10)
+        }
     }
 
     @objc private func systemDidWake(_: Notification) {

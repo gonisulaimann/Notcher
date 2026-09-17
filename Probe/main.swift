@@ -33,12 +33,13 @@ import SwiftUI
 //   MainActor.assumeIsolated + RunLoop.main.run pumps. No Task, no await.
 let probeMode = CommandLine.arguments.count >= 2 ? CommandLine.arguments[1] : ""
 switch probeMode {
-case "stress", "persistence", "poweredge", "naming":
+case "stress", "persistence", "poweredge", "naming", "firstrun":
     MainActor.assumeIsolated {
         switch probeMode {
         case "stress": Probe.StressSync.runStress()
         case "persistence": Probe.StressSync.runPersistence()
         case "poweredge": Probe.StressSync.runPowerEdge()
+        case "firstrun": Probe.StressSync.runFirstRun()
         default: Probe.StressSync.runNaming()
         }
     }
@@ -62,7 +63,7 @@ case "samplesteady":
     print(Probe.failures == 0 ? "PROBE DONE, ALL PASS" : "PROBE DONE, \(Probe.failures) FAILURE(S)")
     exit(Probe.failures == 0 ? 0 : 1)
 default:
-    print("usage: NotcherProbe storm|sendfile|cleanup|samplesteady|taptest|stress|persistence|poweredge|naming|reconnect")
+    print("usage: NotcherProbe storm|sendfile|cleanup|samplesteady|taptest|stress|persistence|poweredge|naming|firstrun|reconnect")
     exit(2)
 }
 
@@ -295,7 +296,8 @@ struct Probe {
 
         /// Regression for the full-flash spam defect: two consecutive
         /// >=99.5 % charging polls must emit exactly one `.full`.
-        static func runPowerEdge() {            var s = PowerEngine.EdgeState()
+        static func runPowerEdge() {
+            var s = PowerEngine.EdgeState()
             let full = PowerEngine.Snapshot(percent: 100, charging: true)
             let first = PowerEngine.edgeEvents(info: full, state: &s)
             let second = PowerEngine.edgeEvents(info: full, state: &s)
@@ -483,7 +485,25 @@ struct Probe {
             check(name("a.b.txt", taken: ["a.b.txt"]) == "a.b 2.txt", "naming multi-dot stem")
         }
 
-        static func runPersistence() {            let saved = Probe.backupSupport()
+        /// First-run decision matrix: translocated always guides (even repeat
+        /// launches), normal first launch welcomes once, afterwards silence.
+        static func runFirstRun() {
+            check(FirstRun.plan(translocated: false, didRun: false) == .welcomeTray,
+                  "firstrun fresh launch welcomes")
+            check(FirstRun.plan(translocated: false, didRun: true) == nil,
+                  "firstrun repeat launch silent")
+            check(FirstRun.plan(translocated: true, didRun: false) == .translocatedTray,
+                  "firstrun translocated guides")
+            check(FirstRun.plan(translocated: true, didRun: true) == .translocatedTray,
+                  "firstrun translocated guides every time")
+            check(FirstRun.isTranslocated(bundlePath: "/Applications/Notcher.app") == false,
+                  "firstrun normal path not translocated")
+            check(FirstRun.isTranslocated(bundlePath: "/private/var/folders/xx/T/AppTranslocation/yy/d/Notcher.app") == true,
+                  "firstrun translocation path detected")
+        }
+
+        static func runPersistence() {
+            let saved = Probe.backupSupport()
             defer { Probe.restoreSupport(saved) }
 
             func fresh() -> TimerEngine {

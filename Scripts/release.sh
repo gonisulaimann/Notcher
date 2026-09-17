@@ -58,16 +58,51 @@ echo "==> Ad-hoc signing (no Developer ID in this environment)…"
 echo "--- spctl assessment (informational; ad-hoc is NOT notarized) ---"
 /usr/sbin/spctl -a -vv "$APP" || true
 
-echo "==> Building DMG…"
+echo "==> Building DMG (dressed install window, no loose files)…"
 mkdir -p "$DIST"
+test -f "$ROOT/dist-support/dmg-background.png" || swift "$ROOT/Scripts/make-dmg-background.swift"
 DMGROOT="$(mktemp -d /tmp/notcher-dmg.XXXXXX)"
 cp -R "$APP" "$DMGROOT/Notcher.app"
 ln -s /Applications "$DMGROOT/Applications"
-cp "$ROOT/dist-support/README-install.txt" "$DMGROOT/Read Me — Installing Notcher.txt"
+mkdir -p "$DMGROOT/.background"
+cp "$ROOT/dist-support/dmg-background.png" "$DMGROOT/.background/background.png"
 DMG="$DIST/Notcher-$VER.dmg"
-rm -f "$DMG"
-/usr/bin/hdiutil create -volname "Notcher $VER" -srcfolder "$DMGROOT" -ov -format UDZO "$DMG" >/dev/null
+TMPDMG="$DIST/.Notcher-$VER-tmp.dmg"
+rm -f "$TMPDMG" "$DMG"
+/usr/bin/hdiutil create -volname "Notcher $VER" -srcfolder "$DMGROOT" -ov -format UDRW "$TMPDMG" >/dev/null
 rm -rf "$DMGROOT"
+echo "==> Laying out install window (Finder)…"
+MNT="$(/usr/bin/hdiutil attach -nobrowse "$TMPDMG" | grep Volumes | cut -f3-)"
+/usr/bin/osascript <<APPLESCRIPT || echo "!! Finder layout skipped (non-fatal)"
+tell application "Finder"
+  activate
+  open folder (POSIX file "$MNT" as alias)
+  delay 1.0
+  tell front window
+    set current view to icon view
+    set toolbar visible to false
+    set statusbar visible to false
+    set bounds to {120, 120, 780, 540}
+    tell its icon view options
+      set icon size to 96
+      set arrangement to not arranged
+      set background picture to POSIX file ("$MNT/.background/background.png")
+    end tell
+    delay 0.5
+    set position of item "Notcher.app" to {165, 173}
+    set position of item "Applications" to {495, 173}
+    delay 0.5
+    -- read back: the verification (fails loudly if layout did not stick)
+    get bounds
+    get position of item "Notcher.app"
+    get position of item "Applications"
+    close
+  end tell
+end tell
+APPLESCRIPT
+/usr/bin/hdiutil detach "$MNT" >/dev/null
+/usr/bin/hdiutil convert "$TMPDMG" -format UDZO -o "$DMG" >/dev/null
+rm -f "$TMPDMG"
 
 echo "==> Checksumming…"
 (cd "$DIST" && /usr/bin/shasum -a 256 "Notcher-$VER.dmg" > "Notcher-$VER.dmg.sha256")
