@@ -112,6 +112,7 @@ public struct IslandRootView: View {
         .background(DropCatcher(onDrop: onDropFiles,
                                  onHighlight: { island.setDropTarget($0) }))
         .onHover { hovering in
+            island.pointerInside = hovering
             if hovering { island.hoverEntered() } else { island.hoverExited() }
         }
         .animation(island.motionAnimation, value: island.mode)
@@ -123,15 +124,41 @@ public struct IslandRootView: View {
 
 /// Smoked-glass background shared by the pill and the tray: a dark material
 /// plus a translucent black lens so white content stays legible over both
-/// light wallpapers and the light-mode menu bar.
+/// light wallpapers and the light-mode menu bar. Layered: specular top edge,
+/// lens, inner bottom shadow. `hovered` lifts the light without touching
+/// layout (content redraw only — never a window op).
 struct IslandGlass: View {
     var cornerRadius: CGFloat
+    var hovered: Bool = false
     var body: some View {
         ZStack {
             VisualEffect()
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.black.opacity(0.32))
+                .fill(Color.black.opacity(hovered ? 0.27 : 0.32))
+            VStack(spacing: 0) {
+                // Specular top edge: catches light like real glass.
+                LinearGradient(colors: [.white.opacity(hovered ? 0.30 : 0.20), .clear],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 2.5)
+                Spacer()
+                // Inner bottom shadow: gives the tray its depth.
+                LinearGradient(colors: [.clear, .black.opacity(0.20)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 16)
+            }
         }
+        .animation(.easeOut(duration: 0.15), value: hovered)
+    }
+}
+
+/// Pressed-state button style for the whole island: a tactile 4 % settle.
+/// (`.plain` everywhere would leave buttons feeling dead.)
+struct PressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .opacity(configuration.isPressed ? 0.72 : 1.0)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -265,13 +292,19 @@ struct CompactView: View {
             .animation(island.contentAnimation,
                        value: "compact-\(island.activity)-\(island.flash?.id.uuidString ?? "-")")
         }
-        .buttonStyle(.plain)
-        .background(IslandGlass(cornerRadius: 20))
+        .buttonStyle(PressableButtonStyle())
+        .background(IslandGlass(cornerRadius: 20, hovered: island.pointerInside))
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .strokeBorder(island.dropTarget ? .orange.opacity(0.9) : .white.opacity(0.14),
-                          lineWidth: island.dropTarget ? 2 : 1))
+            .strokeBorder(island.dropTarget ? .orange.opacity(0.9)
+                          : .white.opacity(island.pointerInside ? 0.22 : 0.14),
+                          lineWidth: island.dropTarget ? 2.5 : 1))
+        // Drop bloom: a translucent orange wash over the pill. Overlay, not
+        // scale — scaling would clip against the tight window frame.
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(.orange.opacity(island.dropTarget ? 0.12 : 0)))
         .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+        .animation(island.motionAnimation, value: island.dropTarget)
         .accessibilityLabel(accessibilityText)
     }
 
@@ -300,7 +333,7 @@ struct CompactView: View {
                 if !timer.label.isEmpty {
                     Text(timer.label)
                         .font(.system(size: 11.5))
-                        .foregroundStyle(.white.opacity(0.65))
+                        .foregroundStyle(.white.opacity(0.7))
                         .lineLimit(1)
                 }
             case .transfer:
@@ -314,7 +347,7 @@ struct CompactView: View {
                         .lineLimit(1)
                     Text("\(r.got)/\(r.total)")
                         .font(.system(size: 11.5).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.65))
+                        .foregroundStyle(.white.opacity(0.7))
                 } else {
                     Text("Incoming from iPhone")
                         .font(.system(size: 12.5, weight: .medium))
@@ -337,6 +370,7 @@ struct CompactView: View {
                 Text(mediaTitle)
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(.white)
+                    .tracking(-0.2)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 2)
@@ -410,7 +444,7 @@ public struct RemoteTimerPillContent: View {
             }
             Text(peer)
                 .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.65))
+                .foregroundStyle(.white.opacity(0.7))
                 .lineLimit(1)
         }
         // Accessibility: the containing pill button carries the label.
@@ -430,7 +464,7 @@ struct CompactMediaButton: View {    var system: String
                 .frame(width: 22, height: 22)
                 .background(.white.opacity(0.12), in: Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
         .accessibilityLabel(label)
     }
 }
@@ -463,12 +497,16 @@ struct ExpandedView: View {
         }
         .onTapGesture { onInteract() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(IslandGlass(cornerRadius: 24))
+        .background(IslandGlass(cornerRadius: 24, hovered: island.pointerInside))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .strokeBorder(island.dropTarget ? .orange.opacity(0.9) : .white.opacity(0.14),
-                          lineWidth: island.dropTarget ? 2 : 1))
+            .strokeBorder(island.dropTarget ? .orange.opacity(0.9)
+                          : .white.opacity(island.pointerInside ? 0.22 : 0.14),
+                          lineWidth: island.dropTarget ? 2.5 : 1))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .fill(.orange.opacity(island.dropTarget ? 0.10 : 0)))
         .shadow(color: .black.opacity(0.4), radius: 24, y: 10)
+        .animation(island.motionAnimation, value: island.dropTarget)
     }
 
     private var header: some View {
@@ -488,16 +526,16 @@ struct ExpandedView: View {
                     Text("\(Int(p))%")
                         .font(.system(size: 11).monospacedDigit())
                 }
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(.white.opacity(0.7))
             }
             Button(action: { island.togglePin() }) {
                 Image(systemName: island.pinned ? "pin.fill" : "pin")
                     .font(.system(size: 11))
-                    .foregroundStyle(island.pinned ? .orange : .white.opacity(0.6))
+                    .foregroundStyle(island.pinned ? .orange : .white.opacity(0.7))
                     .accessibilityHidden(true)
                     .frame(width: 24, height: 24)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
             .accessibilityLabel(island.pinned ? "Unpin island" : "Pin island open")
         }
         .padding(.horizontal, 14)
@@ -516,11 +554,11 @@ struct SectionCard<Content: View>: View {
             HStack(spacing: 6) {
                 Image(systemName: system)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(.white.opacity(0.45))
                     .accessibilityHidden(true)
                 Text(title.uppercased())
                     .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(.white.opacity(0.45))
                     .tracking(0.4)
             }
             content
@@ -544,7 +582,7 @@ struct TimerSection: View {
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
                         if !timer.label.isEmpty {
-                            Text(timer.label).font(.system(size: 11)).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
+                            Text(timer.label).font(.system(size: 11)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                         }
                         Text(timer.state == .done ? "Done" : (timer.state == .paused ? "Paused" : "Running"))
                             .font(.system(size: 11)).foregroundStyle(.orange)
@@ -600,10 +638,11 @@ struct NowPlayingSection: View {
                         Text(media.title ?? "Unknown track")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(.white)
+                            .tracking(-0.2)
                             .lineLimit(1)
                         Text(((media.artist ?? "") + (media.appName.map { " · \($0)" } ?? "")))
                             .font(.system(size: 11.5))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(.white.opacity(0.7))
                             .lineLimit(1)
                     }
                     Spacer()
@@ -615,7 +654,7 @@ struct NowPlayingSection: View {
             } else {
                 Text("Nothing playing in Music or Spotify.")
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(.white.opacity(0.45))
             }
         }
     }
@@ -628,7 +667,7 @@ struct HarborSection: View {
             if harbor.items.isEmpty {
                 Text("Drag files onto the notch to park them here.")
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(.white.opacity(0.45))
             } else {
                 VStack(spacing: 4) {
                     ForEach(harbor.items) { item in
@@ -651,7 +690,7 @@ struct HarborSection: View {
                                     .accessibilityHidden(true)
                                     .frame(width: 18, height: 18)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(PressableButtonStyle())
                             .accessibilityLabel("Remove \(item.name)")
                         }
                         .contentShape(Rectangle())
@@ -693,7 +732,7 @@ struct LinkSection: View {
                 HStack {
                     Text("Pairing code")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.white.opacity(0.7))
                     Spacer()
                     Text(link.code)
                         .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
@@ -709,7 +748,7 @@ struct LinkSection: View {
                             .padding(.horizontal, 8).padding(.vertical, 4)
                             .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableButtonStyle())
                     .accessibilityLabel("Generate new pairing code")
                 }
                 if let r = link.remoteTimer {
@@ -717,7 +756,7 @@ struct LinkSection: View {
                         Image(systemName: "timer").font(.system(size: 11)).foregroundStyle(.orange).accessibilityHidden(true)
                         TimelineView(.periodic(from: .now, by: 1.0)) { context in
                             Text("\(r.peer): \(TimerFormat.string(liveRemaining(base: r.remaining, updatedAt: r.updatedAt, now: context.date)))")
-                                .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.8))
+                                .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.7))
                         }
                         Spacer()
                     }
@@ -725,7 +764,7 @@ struct LinkSection: View {
                 if link.peers.isEmpty {
                     Text("Open the Notcher companion on your iPhone (same Wi-Fi) and enter this code.")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(.white.opacity(0.45))
                 } else {
                     HStack(spacing: 6) {
                         TextField("Send text to iPhone…", text: Binding(
@@ -746,7 +785,7 @@ struct LinkSection: View {
             } else {
                 Text("Link is off. Nothing leaves this Mac.")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(.white.opacity(0.45))
             }
         }
     }
@@ -786,7 +825,7 @@ struct FooterRow: View {
             Button("Quit Notcher") { NSApp.terminate(nil) }
                 .font(.system(size: 11.5))
                 .foregroundStyle(.white.opacity(0.7))
-                .buttonStyle(.plain)
+                .buttonStyle(PressableButtonStyle())
         }
     }
 }
@@ -802,7 +841,7 @@ struct TrayButton: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
     }
 }
 
@@ -819,7 +858,7 @@ struct TrayIconButton: View {
                 .frame(width: 28, height: 28)
                 .background(.white.opacity(0.1), in: Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
         .accessibilityLabel(label)
     }
 }
@@ -835,7 +874,7 @@ struct Chip: View {
             .padding(.horizontal, 10).padding(.vertical, 6)
             .background(prominent ? .white : .white.opacity(0.1),
                         in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
     }
 }
 

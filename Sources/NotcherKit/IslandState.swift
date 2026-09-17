@@ -37,6 +37,8 @@ public final class IslandState: ObservableObject {
     @Published public var loginEnabled = false
     /// True while a real file drag hovers the island (drives drop glow).
     @Published public var dropTarget = false
+    /// Pointer inside the island window (drives hover light, never layout).
+    @Published public var pointerInside = false
 
     private var flashWork: DispatchWorkItem?
     private var hoverWork: DispatchWorkItem?
