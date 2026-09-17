@@ -1,18 +1,9 @@
-# Notcher — the tide line between Mac and iPhone
+# Say hello to Notcher — the tide line between your Mac and your iPhone.
 
-The MacBook notch, designed from scratch as a living surface: exactly **one**
-live activity at a time (timer › file transfer › media), transient flashes
-for everything else, and a real local link to an iPhone companion. When
-nothing is alive, the island melts back into the camera housing.
-
-Native AppKit + SwiftUI. No Electron. No cloud, no accounts, no telemetry.
-MIT licensed (see LICENSE).
-
-## Download
-
-Get **Notcher-0.2.1.dmg** from
-[Releases](https://github.com/gonisulaimann/Notcher/releases) (also:
-`./Scripts/release.sh` builds it reproducibly from source).
+One live activity in the notch: your timer, your transfers, your music.
+Drag files onto the notch to park them. Pair your iPhone over the local
+network and flick a timer across. When nothing is alive, the island melts
+into the camera housing. No widgets. No cloud. No noise.
 
 ![Expanded island tray](docs/images/notcher-expanded-dark.png)
 
@@ -20,45 +11,82 @@ Get **Notcher-0.2.1.dmg** from
 ![iPhone timer mirror](docs/images/notcher-compact-remote.png)
 ![Now Playing pill](docs/images/notcher-compact-media.png)
 
-## First 5 Minutes
+## Install
 
-1. Download Notcher-0.2.1.dmg from Releases; verify sha256 if you like.
-2. Open the DMG, drag Notcher into Applications.
-3. First launch: right-click → Open → Open (ad-hoc signature, one time).
-4. Look for the waves icon in the menu bar; hover the notch.
-5. Try: Start 25-minute Timer → watch the notch; drag a file onto the
-   notch; open the tray → iPhone Link for the pairing code.
-6. Quit from the tray footer, not by killing the process.
+**You need:** macOS 14 or later, and a MacBook with a notch
+(no notch? it falls back to a floating capsule).
 
-## KNOWN ISSUES (honest list)
+1. Download **Notcher-0.2.1.dmg** from
+   [Releases](https://github.com/gonisulaimann/Notcher/releases).
+2. Open the DMG and drag Notcher into Applications.
+3. The first-launch warning is EXPECTED — the build is ad-hoc signed, and
+   macOS will say it can't verify the app. You only deal with this once.
+   Pick whichever method you like:
 
-- **Ad-hoc signature.** No Developer ID in the build environment, so the app
-  is not notarized. First launch needs right-click → Open, once.
-- **Single display.** The island anchors to the main screen only.
-- **iPhone companion untested on hardware.** The iOS app builds from
-  `Companion-iOS/` + shared `Sources/LinkCore`, but this machine has no
-  Xcode/iOS SDK, so it is EXPECTED TO WORK / NOT TESTED until paired on a
-  real iPhone. See `Companion-iOS/README-iOS.md`.
-- **Requirements:** MacBook with notch (falls back to a floating capsule
-  otherwise), macOS 14+.
+**Recommended: Terminal (always works)**
 
-## Verify it
-
-```sh
-swift run LinkSelfTest    # protocol: crypto, handshake, transfer, auth (8 checks)
-swift run IslandSnapshot  # renders idle/compact/expanded to /tmp/notcher-*.png
-swift run NotcherProbe stress          # window/state-machine storm (12 checks)
-swift run NotcherProbe persistence     # timer relaunch round-trips (4 checks)
-swift run NotcherProbe reconnect       # kill + re-handshake (2 checks)
-swift run NotcherProbe samplesteady <pid> <sec>  # live frame-stability audit
-swift run NotcherProbe taptest         # real click->expand, Esc->collapse
-swift run NotcherProbe storm           # burst traffic at the live island
-swift run NotcherProbe sendfile        # one small file, live end to end
+```bash
+xattr -dr com.apple.quarantine /Applications/Notcher.app
 ```
+
+Then open the app normally.
+
+**Alternative: right-click → Open → Open**
+
+Right-click (or Control-click) Notcher.app in Finder → Open → Open.
+Done — it launches normally from then on.
+
+## Usage
+
+- Hover the notch, and voilà — it blooms open around whatever is alive.
+- Drag any file onto the notch, and voilà — it's parked in the Harbor
+  shelf until you drag it out or reveal it in Finder.
+- Click the waves icon in the menu bar → Start 25-minute Timer, and voilà
+  — the notch becomes your countdown.
+- Open the tray → iPhone Link, and voilà — a six-digit pairing code for
+  your iPhone. Start a timer there and it ticks in both places.
+- Quit from the tray footer when you're done, not by killing the process.
+
+## The iPhone companion
+
+Notcher is at its best with your iPhone nearby — mirrored timers, notes
+and files flowing both ways over your local Wi-Fi, nothing touching a
+server. The companion ships separately (see
+[Companion-iOS](Companion-iOS/README-iOS.md)); hardware testing on a real
+iPhone is still pending, honestly marked in the engineering history.
+
+## 🗺 Roadmap
+
+- [ ] SPAKE2 pairing 🤝
+- [ ] iPhone Live Activity mirror 📲
+- [ ] Connection-quality indicator 📶
+- [ ] Multi-display islands 🖥️
+
+## Build from source
+
+Requirements: macOS with Swift toolchain (Command Line Tools are enough —
+no Xcode needed for the Mac app).
+
+```bash
+git clone https://github.com/gonisulaimann/Notcher.git
+cd Notcher
+swift build                 # everything
+./Scripts/build-app.sh      # Notcher.app bundle
+./Scripts/release.sh        # reproducible DMG in dist/
+swift run LinkSelfTest      # protocol checks
+swift run IslandSnapshot    # renders the island states to PNG
+```
+
+## Engineering
+
+One line: [`docs/RECORD.md`](docs/RECORD.md) is the full honest
+engineering history — every claim, evidence attached.
 
 ## Privacy
 
-Local network only. Pairing code never leaves your devices. Text/files move
-only when you explicitly send them. No clipboard snooping, no analytics.
+Local network only. Pairing code never leaves your devices. Text and files
+move only when you explicitly send them. No clipboard snooping, no analytics.
 
-Details, decisions, limitations: [`docs/RECORD.md`](docs/RECORD.md).
+## License
+
+MIT — see [LICENSE](LICENSE).
