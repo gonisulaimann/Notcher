@@ -17,6 +17,7 @@ public final class IslandState: ObservableObject {
         case none
         case timer
         case transfer
+        case remoteTimer
         case media
     }
 
@@ -53,11 +54,15 @@ public final class IslandState: ObservableObject {
         self.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    /// Re-resolve which single activity owns the pill.
-    public func resolve(timerActive: Bool, transferActive: Bool, mediaPlaying: Bool) {
+    /// Re-resolve which single activity owns the pill. Priority:
+    /// local timer › transfer › remote (iPhone) timer › media.
+    /// A mirrored iPhone timer is timer-class attention, but never preempts
+    /// something happening on this Mac right now.
+    public func resolve(timerActive: Bool, transferActive: Bool, remoteTimerActive: Bool, mediaPlaying: Bool) {
         let next: Activity
         if timerActive { next = .timer }
         else if transferActive { next = .transfer }
+        else if remoteTimerActive { next = .remoteTimer }
         else if mediaPlaying { next = .media }
         else { next = .none }
         if next != activity {

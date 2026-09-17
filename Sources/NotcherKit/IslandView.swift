@@ -311,6 +311,16 @@ struct CompactView: View {
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(.white)
                 }
+            case .remoteTimer:
+                if let r = link.remoteTimer {
+                    RemoteTimerPillContent(peer: r.peer, remaining: r.remaining,
+                                           total: r.total, updatedAt: r.updatedAt)
+                } else {
+                    // Mirror expired between resolve and render; recede text.
+                    Text("iPhone timer ended")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
             case .media:
                 Image(systemName: media.playing ? "waveform" : "music.note")
                     .foregroundStyle(.pink)
@@ -350,14 +360,56 @@ struct CompactView: View {
         switch island.activity {
         case .timer: return "Timer, \(TimerFormat.string(timer.remaining)) remaining"
         case .transfer: return "Receiving file from iPhone"
+        case .remoteTimer:
+            if let r = link.remoteTimer {
+                return "iPhone timer from \(r.peer), \(TimerFormat.string(r.remaining)) remaining"
+            }
+            return "iPhone timer"
         case .media: return "Now playing, \(mediaTitle)"
         case .none: return "Notcher"
         }
     }
 }
 
-struct CompactMediaButton: View {
-    var system: String
+/// Pure pill content for a mirrored iPhone timer: peer name plus a locally
+/// extrapolated live countdown (truth arrives ~every 5 s). Value types only,
+/// so the snapshot harness can render it without a live session.
+public struct RemoteTimerPillContent: View {
+    public var peer: String
+    public var remaining: Double
+    public var total: Double
+    public var updatedAt: Date
+
+    public init(peer: String, remaining: Double, total: Double, updatedAt: Date) {
+        self.peer = peer
+        self.remaining = remaining
+        self.total = total
+        self.updatedAt = updatedAt
+    }
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "timer")
+                .foregroundStyle(.orange)
+                .font(.system(size: 13, weight: .semibold))
+            TimelineView(.periodic(from: .now, by: 1.0)) { context in
+                Text(TimerFormat.string(liveRemaining(base: remaining,
+                                                      updatedAt: updatedAt,
+                                                      now: context.date)))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+            }
+            Text(peer)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.white.opacity(0.65))
+                .lineLimit(1)
+        }
+        // Accessibility: the containing pill button carries the label.
+        .accessibilityHidden(true)
+    }
+}
+
+struct CompactMediaButton: View {    var system: String
     var label: String
     var action: () -> Void
     var body: some View {
@@ -654,8 +706,10 @@ struct LinkSection: View {
                 if let r = link.remoteTimer {
                     HStack(spacing: 6) {
                         Image(systemName: "timer").font(.system(size: 11)).foregroundStyle(.orange).accessibilityHidden(true)
-                        Text("\(r.peer): \(TimerFormat.string(r.remaining))")
-                            .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.8))
+                        TimelineView(.periodic(from: .now, by: 1.0)) { context in
+                            Text("\(r.peer): \(TimerFormat.string(liveRemaining(base: r.remaining, updatedAt: r.updatedAt, now: context.date)))")
+                                .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.8))
+                        }
                         Spacer()
                     }
                 }
@@ -783,4 +837,10 @@ public enum TimerFormat {
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, r) }
         return String(format: "%02d:%02d", m, r)
     }
+}
+
+/// Live edge of a mirrored countdown: truth arrives every ~5 s, the clock
+/// between updates is extrapolated locally (never below zero).
+public func liveRemaining(base: Double, updatedAt: Date, now: Date) -> Double {
+    max(0, base - now.timeIntervalSince(updatedAt))
 }

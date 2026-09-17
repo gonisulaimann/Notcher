@@ -12,7 +12,7 @@ public final class LinkHost: ObservableObject {
     @Published public private(set) var enabled = true
     @Published public private(set) var code: String = ""
     @Published public private(set) var receiving: (fileName: String, got: Int, total: Int)?
-    @Published public private(set) var remoteTimer: (peer: String, remaining: Double, total: Double, label: String)?
+    @Published public private(set) var remoteTimer: (peer: String, remaining: Double, total: Double, label: String, updatedAt: Date)?
     /// Tray text-field drafts (view state kept here: no @State under CLT).
     @Published public var draftMessage: String = ""
     @Published public private(set) var confirmRegen = false
@@ -74,9 +74,10 @@ public final class LinkHost: ObservableObject {
 
     public func start() {
         guard enabled else { return }
-        let t = LinkTransport(deviceName: deviceName, deviceID: deviceID, code: { [weak self] in
-            Task { @MainActor in _ = self }
-            return UserDefaults.standard.string(forKey: "link.code") ?? "000000"
+        // The code closure reads live defaults so rotation (regenerate)
+        // takes effect on the restarted session without more plumbing.
+        let t = LinkTransport(deviceName: deviceName, deviceID: deviceID, code: {
+            UserDefaults.standard.string(forKey: "link.code") ?? "000000"
         })
         t.onMessage = { [weak self] msg in
             Task { @MainActor in self?.handle(msg) }
@@ -197,7 +198,7 @@ public final class LinkHost: ObservableObject {
         case .timerState:
             if let s = msg.seconds {
                 remoteTimerExpiry?.cancel()
-                remoteTimer = (msg.deviceName, s, msg.total ?? s, msg.label ?? "")
+                remoteTimer = (msg.deviceName, s, msg.total ?? s, msg.label ?? "", Date())
                 let work = DispatchWorkItem { [weak self] in
                     Task { @MainActor in self?.remoteTimer = nil }
                 }

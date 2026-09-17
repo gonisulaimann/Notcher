@@ -103,6 +103,32 @@ struct Snap {
         island.mode = .compact; island.activity = .media
         shoot(NSSize(width: 348, height: 40), "compact-media", dark: true)
 
+        // 3b. remote-timer pill content with stub values (pure view: no live
+        // session needed). Rendered in equivalent pill chrome.
+        do {
+            let pill = ZStack {
+                RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.black.opacity(0.85))
+                RemoteTimerPillContent(peer: "iPhone", remaining: 754, total: 1500, updatedAt: Date())
+                    .padding(.horizontal, 14)
+            }
+            let hosting = NSHostingView(rootView: AnyView(pill))
+            hosting.layer?.backgroundColor = NSColor.clear.cgColor
+            win.contentView = hosting
+            win.appearance = NSAppearance(named: .darkAqua)
+            place(NSSize(width: 348, height: 40))
+            win.orderFrontRegardless()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.7))
+            let hid = CGWindowID(win.windowNumber)
+            if let img = CGWindowListCreateImage(CGRect.null, .optionIncludingWindow, hid, [.boundsIgnoreFraming]) {
+                let rep = NSBitmapImageRep(cgImage: img)
+                rep.size = NSSize(width: img.width, height: img.height)
+                if let png = rep.representation(using: .png, properties: [:]) {
+                    try? png.write(to: URL(fileURLWithPath: "/tmp/notcher-compact-remote.png"))
+                    print("wrote /tmp/notcher-compact-remote.png \(img.width)x\(img.height)")
+                }
+            }
+        }
+
         // 4. expanded, dark
         island.mode = .expanded
         shoot(NSSize(width: 404, height: 468), "expanded-dark", dark: true)

@@ -33,9 +33,13 @@ import SwiftUI
 //   MainActor.assumeIsolated + RunLoop.main.run pumps. No Task, no await.
 let probeMode = CommandLine.arguments.count >= 2 ? CommandLine.arguments[1] : ""
 switch probeMode {
-case "stress", "persistence":
+case "stress", "persistence", "poweredge":
     MainActor.assumeIsolated {
-        if probeMode == "stress" { Probe.StressSync.runStress() } else { Probe.StressSync.runPersistence() }
+        switch probeMode {
+        case "stress": Probe.StressSync.runStress()
+        case "persistence": Probe.StressSync.runPersistence()
+        default: Probe.StressSync.runPowerEdge()
+        }
     }
     print(Probe.failures == 0 ? "PROBE DONE, ALL PASS" : "PROBE DONE, \(Probe.failures) FAILURE(S)")
     fflush(stdout)
@@ -57,7 +61,7 @@ case "samplesteady":
     print(Probe.failures == 0 ? "PROBE DONE, ALL PASS" : "PROBE DONE, \(Probe.failures) FAILURE(S)")
     exit(Probe.failures == 0 ? 0 : 1)
 default:
-    print("usage: NotcherProbe storm|sendfile|samplesteady|stress|persistence|reconnect")
+    print("usage: NotcherProbe storm|sendfile|samplesteady|taptest|stress|persistence|poweredge|reconnect")
     exit(2)
 }
 
@@ -270,6 +274,28 @@ struct Probe {
             if cond { print("PASS  \(name)") } else { print("FAIL  \(name)"); Probe.failures += 1 }
         }
 
+        /// Regression for the full-flash spam defect: two consecutive
+        /// >=99.5 % charging polls must emit exactly one `.full`.
+        static func runPowerEdge() {
+            var s = PowerEngine.EdgeState()
+            let full = PowerEngine.Snapshot(percent: 100, charging: true)
+            let first = PowerEngine.edgeEvents(info: full, state: &s)
+            let second = PowerEngine.edgeEvents(info: full, state: &s)
+            check(first == [.full] && second.isEmpty,
+                  "poweredge full latches (1 event across 2 polls)")
+            _ = PowerEngine.edgeEvents(info: PowerEngine.Snapshot(percent: 100, charging: false), state: &s)
+            // Replug correctly emits chargingStarted AND exactly one full.
+            check(PowerEngine.edgeEvents(info: full, state: &s) == [.chargingStarted, .full],
+                  "poweredge latch resets on disconnect")
+            _ = PowerEngine.edgeEvents(info: PowerEngine.Snapshot(percent: 94, charging: true), state: &s)
+            check(PowerEngine.edgeEvents(info: full, state: &s) == [.full],
+                  "poweredge latch resets below 95%")
+            var s2 = PowerEngine.EdgeState()
+            let low1 = PowerEngine.edgeEvents(info: PowerEngine.Snapshot(percent: 15, charging: false), state: &s2)
+            let low2 = PowerEngine.edgeEvents(info: PowerEngine.Snapshot(percent: 15, charging: false), state: &s2)
+            check(low1 == [.low] && low2.isEmpty, "poweredge low latches")
+        }
+
         static func pump(_ s: TimeInterval) {
             RunLoop.main.run(until: Date().addingTimeInterval(s))
         }
@@ -319,15 +345,17 @@ struct Probe {
             _ = bag
 
             // 1. Priority truth table under 200 rapid oscillations.
+            // Priority: timer › transfer › remoteTimer › media › none.
             var truthOK = true
             for i in 0 ..< 200 {
-                let ta = i % 2 == 0, tr = i % 3 == 0, me = i % 5 == 0
-                island.resolve(timerActive: ta, transferActive: tr, mediaPlaying: me)
-                let expect: IslandState.Activity = ta ? .timer : (tr ? .transfer : (me ? .media : .none))
+                let ta = i % 2 == 0, tr = i % 3 == 0, re = i % 7 == 0, me = i % 5 == 0
+                island.resolve(timerActive: ta, transferActive: tr, remoteTimerActive: re, mediaPlaying: me)
+                let expect: IslandState.Activity =
+                    ta ? .timer : (tr ? .transfer : (re ? .remoteTimer : (me ? .media : .none)))
                 if island.activity != expect { truthOK = false; break }
             }
             check(truthOK, "stress priority truth table x200")
-            island.resolve(timerActive: false, transferActive: false, mediaPlaying: false)
+            island.resolve(timerActive: false, transferActive: false, remoteTimerActive: false, mediaPlaying: false)
             pump(0.6)
 
             // 2. Flash bursts (overlapping cancellation).
@@ -423,8 +451,7 @@ struct Probe {
             check(changes <= 3, "stress steady tail frames stable (\(changes) changes)")
         }
 
-        static func runPersistence() {
-            let saved = Probe.backupSupport()
+        static func runPersistence() {            let saved = Probe.backupSupport()
             defer { Probe.restoreSupport(saved) }
 
             func fresh() -> TimerEngine {

@@ -47,8 +47,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.link.broadcastTimerState()
         }
         timer.onFinished = { [weak self] in
-            self?.island.showFlash(icon: "checkmark.circle.fill", text: self?.timer.label.isEmpty == false ? "\(self!.timer.label) — done" : "Timer done", seconds: 6)
-            self?.link.broadcastTimerState()
+            guard let self else { return }
+            let label = self.timer.label
+            self.island.showFlash(icon: "checkmark.circle.fill",
+                                  text: label.isEmpty ? "Timer done" : "\(label) — done",
+                                  seconds: 6)
+            self.link.broadcastTimerState()
         }
         media.onChanged = { [weak self] in
             guard let self else { return }
@@ -171,7 +175,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let remoteTimerActive = !timer.isActive && link.remoteTimer != nil
         island.resolve(timerActive: timer.isActive || timer.state == .done,
                        transferActive: transferActive,
-                       mediaPlaying: media.playing || remoteTimerActive)
+                       remoteTimerActive: remoteTimerActive,
+                       mediaPlaying: media.playing)
         requestRefresh()
     }
 

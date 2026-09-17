@@ -9,6 +9,7 @@ swift run NotcherProbe samplesteady <pid> <sec> # 60 Hz frame-stability audit
 swift run NotcherProbe taptest                  # real click->expand, Esc->collapse
 swift run NotcherProbe stress                   # in-process window/state storm
 swift run NotcherProbe persistence              # timer relaunch round-trips
+swift run NotcherProbe poweredge                # power-event latch regression
 swift run NotcherProbe reconnect                # kill + re-establish session
 ```
 

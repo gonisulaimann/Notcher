@@ -12,15 +12,23 @@ public final class PowerEngine: ObservableObject {
 
     public var onEvent: ((PowerEvent) -> Void)?
 
-    public enum PowerEvent {
+    public enum PowerEvent: Sendable, Equatable {
         case chargingStarted
         case full
         case low
     }
 
+    /// Edge-decision state. Lives on the engine in production; passed
+    /// explicitly so the transition table is unit-testable without IOKit.
+    public struct EdgeState: Sendable {
+        public var wasCharging: Bool?
+        public var lowNotified = false
+        public var fullNotified = false
+        public init() {}
+    }
+
     private var poll: Timer?
-    private var wasCharging: Bool?
-    private var lowNotified = false
+    private var edges = EdgeState()
 
     public init() {
         refresh()
@@ -41,25 +49,44 @@ public final class PowerEngine: ObservableObject {
 
     public func refresh() {
         guard let info = PowerEngine.snapshot() else { return }
-        let was = wasCharging
         percent = info.percent
         charging = info.charging
-        if let was, was != info.charging {
-            if info.charging { onEvent?(.chargingStarted) }
-        }
-        wasCharging = info.charging
-        if info.charging, info.percent >= 99.5 { onEvent?(.full) }
-        if !info.charging, info.percent <= 20 {
-            if !lowNotified { lowNotified = true; onEvent?(.low) }
-        } else if info.percent > 25 {
-            lowNotified = false
+        for event in PowerEngine.edgeEvents(info: info, state: &edges) {
+            onEvent?(event)
         }
         LinkHostBatteryProvider.battery = info.percent / 100
     }
 
-    public struct Snapshot {
-        var percent: Double
-        var charging: Bool
+    /// Pure edge table: level inputs in, at-most-once events out.
+    /// - `.full` latches until the charger disconnects or charge drops below
+    ///   95 % (without the latch it re-fires on every 30 s poll near 100 %).
+    /// - `.low` latches until charge rises above 25 % (pre-existing).
+    nonisolated public static func edgeEvents(info: Snapshot, state: inout EdgeState) -> [PowerEvent] {
+        var out: [PowerEvent] = []
+        if let was = state.wasCharging, was != info.charging {
+            if info.charging { out.append(.chargingStarted) }
+        }
+        state.wasCharging = info.charging
+        if info.charging, info.percent >= 99.5 {
+            if !state.fullNotified { state.fullNotified = true; out.append(.full) }
+        } else if !info.charging || info.percent < 95 {
+            state.fullNotified = false
+        }
+        if !info.charging, info.percent <= 20 {
+            if !state.lowNotified { state.lowNotified = true; out.append(.low) }
+        } else if info.percent > 25 {
+            state.lowNotified = false
+        }
+        return out
+    }
+
+    public struct Snapshot: Sendable {
+        public var percent: Double
+        public var charging: Bool
+        public init(percent: Double, charging: Bool) {
+            self.percent = percent
+            self.charging = charging
+        }
     }
 
     public static func snapshot() -> Snapshot? {
