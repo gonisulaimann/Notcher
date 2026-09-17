@@ -462,3 +462,25 @@ closure removed. No behavior change; matrix green.
   release https://github.com/gonisulaimann/Notcher/releases/tag/v0.2.1,
   site https://gonisulaimann.github.io/Notcher/ (target future:
   https://notcher.github.io/ with this URL kept as redirect).
+
+---
+
+# Phase 5 (final) — org site, redirect, About (supersedes the above target)
+
+- Naming settled: org https://github.com/notcherapp (live, id verified),
+  site repo notcherapp/notcherapp.github.io (exact name, was public + EMPTY
+  at takeover). Stray-dash rename noted per directive: always push to the
+  exact name; never trust a redirecting URL for writes. @Notcher squat:
+  ticket filed by owner; nothing planned around it.
+- https://notcherapp.github.io/ live from `main` (/root), HTTPS enforced,
+  verified 200 with self-referencing og tags. Site content = the upgraded
+  v2 page (headline/accent/nav/badge/live pill), og:url + og:image repointed,
+  nothing else changed.
+- Old deployment kept as one-screen redirect ("Notcher has moved.",
+  meta-refresh + JS + manual link); assets left in place so old og:image and
+  deep links never 404. Verified live.
+- Repo About set via API: description, website, topics
+  [macos, notch, dynamic-island, swift, swiftui, appkit, menu-bar].
+- README pitch rewrite + brand-surface site upgrade committed on main;
+  product code untouched for the entire phase (verified: working tree shows
+  only docs/site/README commits since v0.2.1).
