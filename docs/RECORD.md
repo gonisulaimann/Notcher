@@ -324,7 +324,6 @@ side-loading; another Mac gets the documented Right-click → Open flow.
 `hdiutil` deprecation warnings on macOS 27 are cosmetic (commands succeed).
 
 ## iOS adversarial review (no device — findings only)
-
 - Added `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` to the
   plist fragment (else received files are invisible in the Files app).
 - Fixed same-name collision suffix accumulation on BOTH platforms.
@@ -336,3 +335,75 @@ side-loading; another Mac gets the documented Right-click → Open flow.
   file-keying consistent with transport stamping, background stop correct,
   permission-denied path retries via browser restart (code-reviewed).
 - iOS remains EXPECTED TO WORK / NOT TESTED on hardware.
+
+---
+
+# Senior-audit session: version control, three defects, redesign
+
+## Phase 0 — version control
+
+`git init`, `.gitignore` (build outputs, DMG, app copies, `.freebuff/`,
+`.DS_Store`), repo-local identity, baseline commit "Notcher 0.2.0 — audited
+baseline" (35 files, zero artifacts). One commit per coherent change after.
+Note: two earlier `SESSION-FOR-CHATGPT*.txt` exports are no longer on disk
+(unknown remover; likely external tool — `.freebuff/` appeared the same
+evening and is excluded, not ours). No product files affected.
+
+## Phase 1, defect 1 — "Fully charged" flash spam (TESTED fixed)
+
+`PowerEngine.refresh()` fired `.full` on every 30 s poll while plugged in
+near 100 % (level-triggered, unlike edge-gated `.chargingStarted`). The
+island would re-light forever. Fix: edge table extracted to testable static
+`func edgeEvents(info:state:)`, `.full` latches until disconnect or <95 %,
+`.low` latch preserved. Regression: `NotcherProbe poweredge` (4/4) —
+double-99.5 % polls emit exactly one `.full`; replug emits
+`[.chargingStarted, .full]`; dip-below-95 re-arms; low latch intact.
+
+## Phase 1, defect 2 — remote timer read as "Nothing playing" (TESTED fixed)
+
+`engineChanged()` folded the iPhone mirror into `mediaPlaying`, so the
+compact pill took the `.media` branch with nil title. Fix: first-class
+`.remoteTimer` activity, priority timer › transfer › remoteTimer › media;
+pill branch shows orange timer + peer + locally extrapolated live countdown
+(`TimelineView` 1 s tick; truth arrives ~5 s); LinkSection row upgraded the
+same way; shared `liveRemaining()` helper; pure `RemoteTimerPillContent`
+view so snapshots render it without a live session
+(/tmp/notcher-compact-remote.png: "12:34 iPhone", correct).
+
+## Phase 1, defect 3 — hygiene (TESTED fixed)
+
+Force-unwrap `self!.timer.label` in `timer.onFinished` replaced with guarded
+label capture. Dead `Task { @MainActor in _ = self }` in LinkHost's code
+closure removed. No behavior change; matrix green.
+
+## Phase 2 — generational surface redesign (TESTED, no new features)
+
+- Motion: container spring retuned to response 0.5 / damping 0.7 (one
+  tasteful overshoot); mode roots crossfade + scale (0.92–0.94 → 1.0);
+  compact content morphs on every activity/flash handoff via identity-keyed
+  transition. AppKit frame morph unchanged (platform limit, documented —
+  guardrails win ties, here there was no tie). Ease paths preserved.
+- Material: IslandGlass layered — specular top edge pushed, inner bottom
+  shadow, hover-responding lens (0.32 → 0.27) and border (0.14 → 0.22).
+  All content-redraw-only; zero window-op impact by construction.
+- Type: text opacities normalized to 100 / 70 / 45; headline tracking −0.2.
+- Pressed states: `PressableButtonStyle` (0.96 + dim) on every island button.
+- Drop inhale without scale (tight window would clip): 2.5 px orange border
+  + translucent bloom wash, animated.
+- Pupil ring tried and CUT: snapshot read as a smudge, fought the invisible
+  idle. No sentiment.
+- Breathing link dot kept.
+
+## Phase 2 gates (all green)
+
+- Snapshots: /tmp/notcher-idle.png, /tmp/notcher-compact-timer.png,
+  /tmp/notcher-compact-media.png, /tmp/notcher-compact-remote.png,
+  /tmp/notcher-expanded-dark.png, /tmp/notcher-expanded-light.png.
+- Matrix: stress 12/12, persistence 4/4, reconnect 2/2, selftest 8/8,
+  poweredge 4/4. samplesteady 519/519 identical idle frames (≥300 required).
+  taptest PASS/PASS (dimensions unchanged, interaction re-proved anyway).
+- Idle CPU re-measured: 0.27 % of one core over 30 s (was 0.23 %; noise).
+- Commits: Phase 1 audit defects, Phase 2a motion, Phase 2b material —
+  one per coherent change.
+- No new features. No stability-guardrail contact (no new window-op paths;
+  `pointerInside` has deliberately NO refresh sink).
