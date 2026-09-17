@@ -10,8 +10,16 @@ swift run NotcherProbe taptest                  # real click->expand, Esc->colla
 swift run NotcherProbe stress                   # in-process window/state storm
 swift run NotcherProbe persistence              # timer relaunch round-trips
 swift run NotcherProbe poweredge                # power-event latch regression
+swift run NotcherProbe naming                   # collision-namer regression
 swift run NotcherProbe reconnect                # kill + re-establish session
+swift run NotcherProbe cleanup                  # delete probe artifacts from live inbox
 ```
+
+`storm` / `sendfile` / `taptest` write REAL files to the live
+`~/Downloads/Notcher Inbox` (that is the point — end-to-end proof). Every
+artifact matches a known prefix (`Note from Probe*`, `notcher-probe-note*`,
+`Notcher probe tap*`); run `cleanup` afterwards. Harbor dead-entries prune
+themselves on the next app launch — relaunch Notcher to finish.
 
 `storm` / `sendfile` pair over Bonjour using the live pairing code (read via
 `CFPreferences`, never typed) and intentionally cause visible product

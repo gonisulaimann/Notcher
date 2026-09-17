@@ -242,19 +242,25 @@ public final class LinkHost: ObservableObject {
     }
 
     private func uniqueURL(in dir: URL, name: String) -> URL {
-        // Anchor on the ORIGINAL stem: deriving each candidate from the
-        // previous one accumulates suffixes ("a 2 3.txt").
+        dir.appendingPathComponent(Self.uniqueFilename(name: name) { candidate in
+            FileManager.default.fileExists(atPath: dir.appendingPathComponent(candidate).path)
+        })
+    }
+
+    /// Pure collision namer (extracted for regression coverage): anchored on
+    /// the ORIGINAL stem so repeated collisions yield "a 2.ext", "a 3.ext" —
+    /// never the accumulated "a 2 3.ext" the old inline version produced.
+    public static func uniqueFilename(name: String, exists: (String) -> Bool) -> String {
         let stem = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
-        var url = dir.appendingPathComponent(name)
+        if !exists(name) { return name }
         var n = 2
-        while FileManager.default.fileExists(atPath: url.path) {
-            let suffixed = ext.isEmpty ? "\(stem) \(n)" : "\(stem) \(n).\(ext)"
-            url = dir.appendingPathComponent(suffixed)
+        while true {
+            let candidate = ext.isEmpty ? "\(stem) \(n)" : "\(stem) \(n).\(ext)"
+            if !exists(candidate) { return candidate }
             n += 1
-            if n > 100 { break }
+            if n > 1000 { return candidate } // bounded; callers cap volume separately
         }
-        return url
     }
 
     private func saveText(_ text: String, from peer: String) {

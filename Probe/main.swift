@@ -33,18 +33,19 @@ import SwiftUI
 //   MainActor.assumeIsolated + RunLoop.main.run pumps. No Task, no await.
 let probeMode = CommandLine.arguments.count >= 2 ? CommandLine.arguments[1] : ""
 switch probeMode {
-case "stress", "persistence", "poweredge":
+case "stress", "persistence", "poweredge", "naming":
     MainActor.assumeIsolated {
         switch probeMode {
         case "stress": Probe.StressSync.runStress()
         case "persistence": Probe.StressSync.runPersistence()
-        default: Probe.StressSync.runPowerEdge()
+        case "poweredge": Probe.StressSync.runPowerEdge()
+        default: Probe.StressSync.runNaming()
         }
     }
     print(Probe.failures == 0 ? "PROBE DONE, ALL PASS" : "PROBE DONE, \(Probe.failures) FAILURE(S)")
     fflush(stdout)
     exit(Probe.failures == 0 ? 0 : 1)
-case "storm", "sendfile", "reconnect", "taptest":
+case "storm", "sendfile", "reconnect", "taptest", "cleanup":
     Task {
         await Probe.runAsync(mode: probeMode)
         print(Probe.failures == 0 ? "PROBE DONE, ALL PASS" : "PROBE DONE, \(Probe.failures) FAILURE(S)")
@@ -61,7 +62,7 @@ case "samplesteady":
     print(Probe.failures == 0 ? "PROBE DONE, ALL PASS" : "PROBE DONE, \(Probe.failures) FAILURE(S)")
     exit(Probe.failures == 0 ? 0 : 1)
 default:
-    print("usage: NotcherProbe storm|sendfile|samplesteady|taptest|stress|persistence|poweredge|reconnect")
+    print("usage: NotcherProbe storm|sendfile|cleanup|samplesteady|taptest|stress|persistence|poweredge|naming|reconnect")
     exit(2)
 }
 
@@ -79,8 +80,26 @@ struct Probe {
         case "sendfile": await sendfile()
         case "reconnect": await reconnect()
         case "taptest": await taptest()
+        case "cleanup": cleanup()
         default: break
         }
+    }
+
+    /// Quarantine enforcement: every probe artifact matches a known prefix;
+    /// this mode removes them from the live inbox. Harbor dead-entries prune
+    /// themselves on the next app launch (resolve fails) — relaunch Notcher
+    /// after cleanup to finish. Run this after every storm/sendfile/taptest.
+    static func cleanup() {
+        let inbox = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Notcher Inbox", isDirectory: true)
+        let patterns = ["Note from Probe", "notcher-probe-note", "Notcher probe tap"]
+        var removed = 0
+        if let files = try? FileManager.default.contentsOfDirectory(at: inbox, includingPropertiesForKeys: nil) {
+            for u in files where patterns.contains(where: { u.lastPathComponent.hasPrefix($0) }) {
+                if (try? FileManager.default.removeItem(at: u)) != nil { removed += 1 }
+            }
+        }
+        print("cleanup removed \(removed) probe file(s); relaunch Notcher to prune Harbor")
     }
 
     // MARK: - Shared: reach the live app
@@ -276,8 +295,7 @@ struct Probe {
 
         /// Regression for the full-flash spam defect: two consecutive
         /// >=99.5 % charging polls must emit exactly one `.full`.
-        static func runPowerEdge() {
-            var s = PowerEngine.EdgeState()
+        static func runPowerEdge() {            var s = PowerEngine.EdgeState()
             let full = PowerEngine.Snapshot(percent: 100, charging: true)
             let first = PowerEngine.edgeEvents(info: full, state: &s)
             let second = PowerEngine.edgeEvents(info: full, state: &s)
@@ -451,6 +469,20 @@ struct Probe {
             check(changes <= 3, "stress steady tail frames stable (\(changes) changes)")
         }
 
+        /// Regression for the accumulated-suffix defect: repeated collisions
+        /// must count from the original stem ("a 2.ext", "a 3.ext").
+        static func runNaming() {
+            func name(_ base: String, taken: Set<String>) -> String {
+                LinkHost.uniqueFilename(name: base, exists: { taken.contains($0) })
+            }
+            check(name("a.txt", taken: []) == "a.txt", "naming no collision")
+            check(name("a.txt", taken: ["a.txt"]) == "a 2.txt", "naming first collision")
+            check(name("a.txt", taken: ["a.txt", "a 2.txt"]) == "a 3.txt",
+                  "naming counts from stem, never accumulates")
+            check(name("note", taken: ["note"]) == "note 2", "naming extensionless")
+            check(name("a.b.txt", taken: ["a.b.txt"]) == "a.b 2.txt", "naming multi-dot stem")
+        }
+
         static func runPersistence() {            let saved = Probe.backupSupport()
             defer { Probe.restoreSupport(saved) }
 
@@ -499,7 +531,7 @@ struct Probe {
         guard let pid = runningAppPID() else { check(false, "taptest found app"); return }
 
         var flash = LinkMessage(kind: .textPush, deviceName: "Probe", deviceID: "probe")
-        flash.text = "tap me"
+        flash.text = "Notcher probe tap"
         t.broadcast(flash)
         try? await Task.sleep(for: .seconds(1))
 

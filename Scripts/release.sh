@@ -17,7 +17,13 @@ cd "$ROOT"
 
 VER="${1:-}"
 if [[ "$VER" == "--version" ]]; then VER="${2:-}"; fi
-if [[ -z "$VER" ]]; then VER="$(cat VERSION)"; fi
+if [[ -n "$VER" ]]; then
+  # Single source of truth: an explicit version is written back, so the
+  # VERSION file can never silently disagree with the last release.
+  echo "$VER" > "$ROOT/VERSION"
+else
+  VER="$(cat VERSION)"
+fi
 
 DIST="$ROOT/dist"
 STAGE="$(mktemp -d /tmp/notcher-stage.XXXXXX)"
