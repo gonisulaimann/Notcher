@@ -407,3 +407,30 @@ closure removed. No behavior change; matrix green.
   one per coherent change.
 - No new features. No stability-guardrail contact (no new window-op paths;
   `pointerInside` has deliberately NO refresh sink).
+
+---
+
+# Phase 4 — publish, release 0.2.1, landing page (product code FROZEN)
+
+- Repo: https://github.com/gonisulaimann/Notcher (`main` pushed; tag `v0.2.1`
+  annotated). No product-code changes in this phase; triage list stayed empty.
+- Renumber rationale: the DMG said 0.2.0 but predated the Phase 1/2 fixes.
+  0.2.1 is the first build containing them, so the owner can trust the number.
+- Release: https://github.com/gonisulaimann/Notcher/releases/tag/v0.2.1
+  (DMG + .sha256 assets, RECORD-verbatim notes with TESTED/NOT-TESTED split).
+  Verified: mounts, app + symlink + readme, sha256, universal fat binary,
+  ad-hoc signature verifies, version 0.2.1 in bundle.
+- Site: https://gonisulaimann.github.io/Notcher/ (gh-pages branch, static
+  HTML+CSS, zero JS, zero external assets, system fonts; verified 200s on
+  page + all images + og tags; favicon from app icon).
+- README: Download section, six snapshot proofs, exact First-5-Minutes
+  checklist, honest KNOWN ISSUES. LICENSE: MIT © 2026 gonisulaimann.
+- Deletion incident (from Phase 0): two chat-export txt files vanished from
+  disk from an unattributable cause. Standing rule adopted: never delete
+  files you cannot attribute; probe/snapshot hygiene (explicit restores) now
+  covers everything the tooling touches.
+- Liquid Glass stance: hand-built material vocabulary retained (IslandGlass
+  + forced-dark + smoked lens). System glass APIs to be evaluated ONLY for
+  the expanded tray on a stable SDK; idle/compact stay hand-tuned. The
+  identical dark/light snapshot outputs prove the forced-dark design renders
+  independent of window appearance — by construction, not accident.
