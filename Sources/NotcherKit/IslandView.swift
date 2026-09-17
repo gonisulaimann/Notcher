@@ -98,12 +98,15 @@ public struct IslandRootView: View {
             switch island.mode {
             case .idle:
                 IdleView(linked: !link.peers.isEmpty, notchWidth: notchWidth, hasNotch: hasNotch)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
             case .compact:
                 CompactView(island: island, timer: timer, media: media, link: link,
                             onInteract: onInteract)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
             case .expanded:
                 ExpandedView(island: island, timer: timer, media: media, power: power,
                              harbor: harbor, link: link, onInteract: onInteract)
+                    .transition(.scale(scale: 0.94).combined(with: .opacity))
             }
         }
         .background(DropCatcher(onDrop: onDropFiles,
@@ -252,9 +255,15 @@ struct CompactView: View {
         Button(action: { onInteract(); island.togglePin() }) {
             HStack(spacing: 8) {
                 content
+                    // Identity follows the live-activity/flash: every handoff
+                    // replaces (morphs) the content instead of snapping it.
+                    .id("compact-\(island.activity)-\(island.flash?.id.uuidString ?? "-")")
+                    .transition(.scale(scale: 0.94).combined(with: .opacity))
             }
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .animation(island.contentAnimation,
+                       value: "compact-\(island.activity)-\(island.flash?.id.uuidString ?? "-")")
         }
         .buttonStyle(.plain)
         .background(IslandGlass(cornerRadius: 20))

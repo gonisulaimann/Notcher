@@ -43,11 +43,19 @@ public final class IslandState: ObservableObject {
     private var hoverExitWork: DispatchWorkItem?
     public let reduceMotion: Bool
 
-    /// The island's one animation curve. Reduced-motion swaps the spring for
-    /// a short ease — the motion still exists, it just stops bouncing.
+    /// The island's one animation curve. The spring is tuned for visible
+    /// liquid deformation (damping ~0.7: one tasteful overshoot, no wobble);
+    /// Reduced Motion keeps a short ease — motion still exists, no bounce.
     public var motionAnimation: Animation {
         reduceMotion ? Animation.easeOut(duration: 0.12)
-                     : Animation.spring(response: 0.42, dampingFraction: 0.82)
+                     : Animation.spring(response: 0.5, dampingFraction: 0.7)
+    }
+
+    /// Content morph curve: crossfade + settle, slightly quicker than the
+    /// container morph so text lands as the glass arrives.
+    public var contentAnimation: Animation {
+        reduceMotion ? Animation.easeOut(duration: 0.1)
+                     : Animation.spring(response: 0.38, dampingFraction: 0.85)
     }
 
     public init() {
