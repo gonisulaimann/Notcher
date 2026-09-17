@@ -6,39 +6,41 @@ for everything else, and a real local link to an iPhone companion. When
 nothing is alive, the island melts back into the camera housing.
 
 Native AppKit + SwiftUI. No Electron. No cloud, no accounts, no telemetry.
+MIT licensed (see LICENSE).
 
-## Run it (MacBook with notch, macOS 14+, CLT or Xcode)
+## Download
 
-```sh
-cd /Users/goni/Desktop/Notcher
-./Scripts/build-app.sh   # swift build (release) → Notcher.app
-open ./Notcher.app
-```
+Get **Notcher-0.2.1.dmg** from
+[Releases](https://github.com/gonisulaimann/Notcher/releases) (also:
+`./Scripts/release.sh` builds it reproducibly from source).
 
-## Install it (release DMG)
+![Expanded island tray](docs/images/notcher-expanded-dark.png)
 
-```sh
-./Scripts/release.sh            # → dist/Notcher-<ver>.dmg (+ .sha256)
-```
+![Timer pill](docs/images/notcher-compact-timer.png)
+![iPhone timer mirror](docs/images/notcher-compact-remote.png)
+![Now Playing pill](docs/images/notcher-compact-media.png)
 
-Open the DMG, drag Notcher.app into Applications, launch. Ad-hoc signed
-(not notarized — no Developer ID in this environment): on first launch, if
-macOS blocks it, right-click → Open → Open, once. Never run the repo copy
-and the installed copy together — the second launch quits itself by design.
+## First 5 Minutes
 
-First launch: no Dock icon (menu-bar app — look for the waves icon `≈`).
-Hover the notch to expand. Drag files onto the notch to park them.
+1. Download Notcher-0.2.1.dmg from Releases; verify sha256 if you like.
+2. Open the DMG, drag Notcher into Applications.
+3. First launch: right-click → Open → Open (ad-hoc signature, one time).
+4. Look for the waves icon in the menu bar; hover the notch.
+5. Try: Start 25-minute Timer → watch the notch; drag a file onto the
+   notch; open the tray → iPhone Link for the pairing code.
+6. Quit from the tray footer, not by killing the process.
 
-Useful without touching the notch:
+## KNOWN ISSUES (honest list)
 
-- Menu bar → **Start 25-minute Timer**
-- Hover → tray → Timer / Now Playing / Harbor / iPhone Link / Open at Login
-
-## iPhone companion
-
-`Companion-iOS/` — pair with the 6-digit code in the island's iPhone Link
-section (same Wi-Fi). Mirror/start the Mac timer, exchange text and files.
-Requires Xcode to build; see `Companion-iOS/README-iOS.md`.
+- **Ad-hoc signature.** No Developer ID in the build environment, so the app
+  is not notarized. First launch needs right-click → Open, once.
+- **Single display.** The island anchors to the main screen only.
+- **iPhone companion untested on hardware.** The iOS app builds from
+  `Companion-iOS/` + shared `Sources/LinkCore`, but this machine has no
+  Xcode/iOS SDK, so it is EXPECTED TO WORK / NOT TESTED until paired on a
+  real iPhone. See `Companion-iOS/README-iOS.md`.
+- **Requirements:** MacBook with notch (falls back to a floating capsule
+  otherwise), macOS 14+.
 
 ## Verify it
 
