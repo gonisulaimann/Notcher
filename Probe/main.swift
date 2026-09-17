@@ -33,7 +33,7 @@ import SwiftUI
 //   MainActor.assumeIsolated + RunLoop.main.run pumps. No Task, no await.
 let probeMode = CommandLine.arguments.count >= 2 ? CommandLine.arguments[1] : ""
 switch probeMode {
-case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "external":
+case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "overlap", "external":
     MainActor.assumeIsolated {
         switch probeMode {
         case "stress": Probe.StressSync.runStress()
@@ -41,6 +41,7 @@ case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "ext
         case "poweredge": Probe.StressSync.runPowerEdge()
         case "firstrun": Probe.StressSync.runFirstRun()
         case "godmode": Probe.StressSync.runGodmode()
+        case "overlap": Probe.StressSync.runOverlap()
         case "external": Probe.StressSync.runExternal()
         default: Probe.StressSync.runNaming()
         }
@@ -65,7 +66,7 @@ case "samplesteady":
     print(Probe.failures == 0 ? "PROBE DONE, ALL PASS" : "PROBE DONE, \(Probe.failures) FAILURE(S)")
     exit(Probe.failures == 0 ? 0 : 1)
 default:
-    print("usage: NotcherProbe storm|sendfile|cleanup|shotwatch|samplesteady|taptest|stress|persistence|poweredge|naming|firstrun|reconnect")
+    print("usage: NotcherProbe storm|sendfile|cleanup|shotwatch|samplesteady|taptest|stress|persistence|poweredge|naming|firstrun|godmode|overlap|external|reconnect")
     exit(2)
 }
 
@@ -521,8 +522,7 @@ struct Probe {
             check(name("a.b.txt", taken: ["a.b.txt"]) == "a.b 2.txt", "naming multi-dot stem")
         }
 
-        /// First-run decision matrix: translocated always guides (even repeat
-        /// launches), normal first launch plays the overture once, afterwards silence.
+        /// First-run decision matrix: translocated always guides (even repeat launches), normal first launch plays the overture once, afterwards silence.
         static func runFirstRun() {
             check(FirstRun.plan(translocated: false, didRun: false) == .overture,
                   "firstrun fresh launch plays overture")
@@ -581,6 +581,92 @@ struct Probe {
             ov3.start()
             RunLoop.main.run(until: Date().addingTimeInterval(4.5))
             check(liveDone && ov3.finished, "godmode live run completes on schedule")
+        }
+
+        /// Overlap sovereignty: scrim lifecycle + compositor z-order against
+        /// synthetic crowders at levels 20 / 25 / 27 near the notch. Crowders
+        /// are real windows (documented as synthetic — no crowder app is
+        /// installed here); the order assertions query the live compositor.
+        static func runOverlap() {
+            _ = NSApplication.shared
+            NSApp.setActivationPolicy(.accessory)
+            let island = IslandState()
+            let timer = TimerEngine()
+            timer.permissionPromptEnabled = false
+            let media = MediaEngine()
+            let power = PowerEngine()
+            _ = power
+            let harbor = HarborStore()
+            let link = LinkHost()
+            link.attach(timer: timer, harbor: harbor, island: island)
+            let center = ExternalCenter()
+            let root = IslandRootView(island: island, timer: timer, media: media, power: power,
+                                      harbor: harbor, link: link, center: center,
+                                      notchWidth: 179, hasNotch: true, onDropFiles: { _ in })
+            let hosting = NSHostingView(rootView: root)
+            let ctl = IslandController(content: hosting)
+
+            func crowder(level: Int) -> NSWindow {
+                let w = NSWindow(contentRect: NSRect(x: 585, y: 876, width: 300, height: 60),
+                                 styleMask: .borderless, backing: .buffered, defer: false)
+                w.backgroundColor = NSColor.systemRed.withAlphaComponent(0.5)
+                w.level = NSWindow.Level(rawValue: level)
+                w.orderFrontRegardless()
+                return w
+            }
+
+            func layerOf(_ id: CGWindowID) -> Int? {
+                guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+                    as? [[String: Any]]
+                else { return nil }
+                for w in list {
+                    if (w[kCGWindowNumber as String] as? CGWindowID) == id {
+                        return w[kCGWindowLayer as String] as? Int
+                    }
+                }
+                return nil
+            }
+
+            func belowIsland(_ id: CGWindowID) -> [CGWindowID] {
+                guard let list = CGWindowListCopyWindowInfo([.optionOnScreenBelowWindow], id)
+                    as? [[String: Any]]
+                else { return [] }
+                return list.compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
+            }
+
+            func aboveIsland(_ id: CGWindowID) -> [CGWindowID] {
+                guard let list = CGWindowListCopyWindowInfo([.optionOnScreenAboveWindow], id)
+                    as? [[String: Any]]
+                else { return [] }
+                return list.compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
+            }
+
+            let islandID = CGWindowID(ctl.panel.windowNumber)
+            // 1. Scrim lifecycle follows expanded mode.
+            ctl.show(.idle, allowKey: false, animate: false)
+            check(!ctl.isScrimVisible, "overlap scrim hidden at idle")
+            ctl.show(.expanded, allowKey: true, animate: false)
+            check(ctl.isScrimVisible, "overlap scrim shows with tray")
+            ctl.show(.compact, allowKey: false, animate: false)
+            check(!ctl.isScrimVisible, "overlap scrim hides on collapse")
+            // 2. Level audit: island reports 26.
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+            check(layerOf(islandID) == 26, "overlap island layer is 26")
+            // 3. Live z-order vs crowders.
+            let low = crowder(level: 20)
+            let mid = crowder(level: 25)
+            let high = crowder(level: 27)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+            let lowID = CGWindowID(low.windowNumber)
+            let midID = CGWindowID(mid.windowNumber)
+            let highID = CGWindowID(high.windowNumber)
+            let below = belowIsland(islandID)
+            let above = aboveIsland(islandID)
+            check(below.contains(lowID) && below.contains(midID),
+                  "overlap level-20/25 crowders composite below island")
+            check(above.contains(highID) && !below.contains(highID),
+                  "overlap level-27 crowder above island (expected, documented)")
+            low.orderOut(nil); mid.orderOut(nil); high.orderOut(nil)
         }
 
         /// IslandKit consent/TTL/eviction/priority/revocation table — pure

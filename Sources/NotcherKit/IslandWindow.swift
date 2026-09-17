@@ -11,6 +11,28 @@ public final class IslandPanel: NSPanel {
     override public var canBecomeMain: Bool { false }
 }
 
+/// Soft radial dim behind the expanded tray. Argument for the extra window
+/// (per constitution, written down, not assumed): the tray is translucent
+/// glass over the menu bar; bright menu-bar content bleeds through and
+/// breaks the island's dark-glass illusion. A temporary scrim — visible
+/// ONLY while expanded, mouse-transparent, one level below the island —
+/// carves that space. It is not an always-on layer: it lives and dies with
+/// the expanded mode transition, guarded the same way.
+private final class ScrimView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let colors = [NSColor.black.withAlphaComponent(0.38).cgColor,
+                      NSColor.clear.cgColor] as CFArray
+        guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                    colors: colors, locations: [0, 1]) else { return }
+        let c = CGPoint(x: bounds.midX, y: bounds.maxY - 60)
+        ctx.drawRadialGradient(grad, startCenter: c, startRadius: 40,
+                               endCenter: c, endRadius: max(bounds.width, bounds.height) * 0.62,
+                               options: .drawsAfterEndLocation)
+        super.draw(dirtyRect)
+    }
+}
+
 @MainActor
 public final class IslandController {
     public let panel: IslandPanel
@@ -19,6 +41,8 @@ public final class IslandController {
     private var currentSize = NSSize.zero
     private var currentKind: IslandSize?
     private var currentAllowKey = false
+    private var scrim: NSPanel?
+    private var scrimVisible = false
     nonisolated(unsafe) private var monitors: [Any] = []
 
     public var onOutsideClick: (() -> Void)?
@@ -84,6 +108,10 @@ public final class IslandController {
             self.layout = NotchGeometry.layout(for: self.screen)
             IslandDebug.log("screens changed, re-place \(self.currentSize)")
             self.place(size: self.currentSize, animate: false)
+            // Re-glue the scrim if it is up.
+            if let kind = self.currentKind {
+                self.setScrim(kind == .expanded, animate: false)
+            }
         }
     }
 
@@ -153,6 +181,69 @@ public final class IslandController {
         }
         place(frame: frame, animate: animate)
         if !panel.isVisible { panel.orderFrontRegardless() }
+        setScrim(size == .expanded, animate: animate)
+    }
+
+    /// Scrim follows expanded mode with its own guard: no repeated fades.
+    public var isScrimVisible: Bool { scrimVisible }
+
+    private func setScrim(_ on: Bool, animate: Bool) {
+        if on == scrimVisible {
+            // Keep a visible scrim glued to the screen on geometry changes.
+            if on, let sc = scrim { sc.setFrame(scrimFrame(), display: true) }
+            return
+        }
+        scrimVisible = on
+        if on {
+            let sc: NSPanel
+            if let existing = scrim {
+                sc = existing
+            } else {
+                sc = NSPanel(contentRect: scrimFrame(), styleMask: .borderless,
+                             backing: .buffered, defer: false)
+                sc.isOpaque = false
+                sc.backgroundColor = .clear
+                sc.hasShadow = false
+                sc.level = NSWindow.Level(rawValue: 25)
+                sc.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+                sc.hidesOnDeactivate = false
+                sc.isMovable = false
+                sc.ignoresMouseEvents = true
+                let v = ScrimView(frame: NSRect(origin: .zero, size: scrimFrame().size))
+                v.autoresizingMask = [.width, .height]
+                sc.contentView = v
+                sc.alphaValue = 0
+                scrim = sc
+            }
+            sc.setFrame(scrimFrame(), display: true)
+            sc.orderFrontRegardless()
+            if animate {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.25
+                    sc.animator().alphaValue = 1
+                }
+            } else {
+                sc.alphaValue = 1
+            }
+        } else if let sc = scrim {
+            if animate {
+                NSAnimationContext.runAnimationGroup({ ctx in
+                    ctx.duration = 0.2
+                    sc.animator().alphaValue = 0
+                }, completionHandler: { [weak sc] in
+                    sc?.orderOut(nil)
+                })
+            } else {
+                sc.alphaValue = 0
+                sc.orderOut(nil)
+            }
+        }
+    }
+
+    private func scrimFrame() -> NSRect {
+        let f = screen.frame
+        let w: CGFloat = 560, h: CGFloat = 520
+        return NSRect(x: f.midX - w / 2, y: f.maxY - h + 2, width: w, height: h)
     }
 
     private func frameFor(_ size: NSSize) -> NSRect {

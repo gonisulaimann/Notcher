@@ -11,6 +11,10 @@ swift run NotcherProbe stress                   # in-process window/state storm
 swift run NotcherProbe persistence              # timer relaunch round-trips
 swift run NotcherProbe poweredge                # power-event latch regression
 swift run NotcherProbe naming                   # collision-namer regression
+swift run NotcherProbe firstrun                 # first-run decision matrix
+swift run NotcherProbe godmode                  # overture beats + live run
+swift run NotcherProbe overlap                  # scrim lifecycle + z-order vs crowders
+swift run NotcherProbe external                 # consent/TTL/eviction/priority/revocation
 swift run NotcherProbe reconnect                # kill + re-establish session
 swift run NotcherProbe cleanup                  # delete probe artifacts from live inbox
 ```
