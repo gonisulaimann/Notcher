@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var power = PowerEngine()
     private var harbor = HarborStore()
     private var link = LinkHost()
+    private var center = ExternalCenter()
     private var shots = ShotWatch()
     private var controller: IslandController?
     private var statusItem: NSStatusItem?
@@ -88,6 +89,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         harbor.onChanged = { [weak self] in self?.engineChanged() }
+        center.onEvent = { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .needsConsent(let name):
+                // Visible but never expanded uninvited: a flash, not a grab.
+                self.island.showFlash(icon: "app.badge.fill",
+                                      text: "\(name) wants the waterline")
+            case .shownNow, .drained:
+                break
+            }
+            self.engineChanged()
+        }
         link.onEvent = { [weak self] event in
             guard let self else { return }
             switch event {
@@ -136,11 +149,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .removeDuplicates()
             .sink { [weak self] _ in self?.engineChanged() }
             .store(in: &bag)
+        // External visibility changes are already edge-shaped (nil edges and
+        // content replacement both matter for the pill), but they arrive at
+        // most on user/consent/TTL events — never per-tick.
+        center.$visible
+            .map { $0?.id }
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.engineChanged() }
+            .store(in: &bag)
 
         // Window.
         let root = IslandRootView(
             island: island, timer: timer, media: media, power: power,
-            harbor: harbor, link: link,
+            harbor: harbor, link: link, center: center,
             notchWidth: 0, hasNotch: true,
             onDropFiles: { [weak self] urls in self?.dropFiles(urls) },
             onInteract: { [weak self] in self?.userInteracting() }
@@ -152,7 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Rebuild root with real geometry (value types need the final copy).
         hosting.rootView = IslandRootView(
             island: island, timer: timer, media: media, power: power,
-            harbor: harbor, link: link,
+            harbor: harbor, link: link, center: center,
             notchWidth: layout.notchWidth, hasNotch: layout.hasNotch,
             onDropFiles: { [weak self] urls in self?.dropFiles(urls) },
             onInteract: { [weak self] in self?.userInteracting() }
@@ -165,6 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller = ctl
 
         setupStatusItem()
+        registerURLHandler()
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(systemDidWake(_:)),
@@ -235,7 +257,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         island.resolve(timerActive: timer.isActive || timer.state == .done,
                        transferActive: transferActive,
                        remoteTimerActive: remoteTimerActive,
-                       mediaPlaying: media.playing)
+                       mediaPlaying: media.playing,
+                       externalActive: center.visible != nil)
         requestRefresh()
     }
 
@@ -301,5 +324,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quickTimer() {
         timer.start(seconds: 25 * 60, label: "Focus")
+    }
+
+    // MARK: - IslandKit v1: URL scheme
+
+    private func registerURLHandler() {
+        // 'GURL' / kInternetEventClass + kAEGetURL, without importing Carbon.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleURLEvent(_:withReply:)),
+            forEventClass: AEEventClass(0x4755524C),
+            andEventID: AEEventID(0x4755524C))
+    }
+
+    @objc private func handleURLEvent(_ event: NSAppleEventDescriptor, withReply _: NSAppleEventDescriptor) {
+        // keyDirectObject == '----'
+        guard let raw = event.paramDescriptor(forKeyword: AEKeyword(0x2D2D2D2D))?.stringValue,
+              let comps = URLComponents(string: raw),
+              comps.scheme == "notcher",
+              let items = comps.queryItems
+        else { return }
+        if comps.host == "clear" {
+            func q(_ name: String) -> String? { items.first(where: { $0.name == name })?.value }
+            // Ids are namespaced per sender at submit; namespace here too so
+            // one sender can only ever clear its own activities.
+            let sender = senderIdentity()
+            if let id = q("id"), !id.isEmpty { center.clear(id: sender.key + ":" + id) }
+            else {
+                for id in center.ids(matchingPrefix: sender.key + ":") { center.clear(id: id) }
+            }
+            engineChanged()
+            return
+        }
+        guard comps.host == "activity" else { return }
+        func q(_ name: String) -> String? { items.first(where: { $0.name == name })?.value }
+        guard let title = q("title"), !title.isEmpty else { return }
+        let sender = senderIdentity()
+        let rawID = (q("id")?.isEmpty == false) ? q("id")! : UUID().uuidString
+        let activity = ExternalActivity(
+            id: sender.key + ":" + rawID,
+            source: (q("source")?.isEmpty == false) ? q("source")! : sender.name,
+            bundleID: sender.bundleID,
+            title: title,
+            subtitle: q("subtitle"),
+            progress: q("progress").flatMap(Double.init),
+            priority: q("priority").flatMap(ExternalActivity.Priority.init(rawValue:)) ?? .normal,
+            icon: Self.sanitizedIcon(q("icon")),
+            ttl: Self.parseTTL(q("ttl")))
+        IslandDebug.log("url activity from \(sender.key): \(title)")
+        center.submit(activity)
+    }
+
+    /// Who sent this Apple Event? Direct app-to-app opens resolve to a real
+    /// bundle; `open(1)`-mediated pushes resolve to the tool (no bundle) and
+    /// fall through to the declared source string. Either way the consent
+    /// card shows something truthful about provenance.
+    private func senderIdentity() -> (key: String, name: String, bundleID: String?) {
+        if let event = NSAppleEventManager.shared().currentAppleEvent,
+           // keySenderPIDAttr == 'spid'
+           let pidDesc = event.attributeDescriptor(forKeyword: AEKeyword(0x73706964)),
+           let app = NSRunningApplication(processIdentifier: pidDesc.int32Value)
+        {
+            if let bid = app.bundleIdentifier, !bid.isEmpty {
+                return ("bundle:" + bid, app.localizedName ?? bid, bid)
+            }
+            if let name = app.localizedName, !name.isEmpty {
+                return ("source:" + name, name, nil)
+            }
+        }
+        return ("source:script", "script", nil)
+    }
+
+    private static func sanitizedIcon(_ raw: String?) -> String {
+        guard let raw, !raw.isEmpty,
+              raw.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." }),
+              NSImage(systemSymbolName: raw, accessibilityDescription: nil) != nil
+        else { return "app.badge" }
+        return raw
+    }
+
+    fileprivate static func parseTTL(_ raw: String?) -> TimeInterval {
+        guard let raw = raw?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else {
+            return ExternalActivity.defaultTTL
+        }
+        if raw.hasSuffix("h"), let n = Double(raw.dropLast()) { return n * 3600 }
+        if raw.hasSuffix("m"), let n = Double(raw.dropLast()) { return n * 60 }
+        let digits = raw.hasSuffix("s") ? String(raw.dropLast()) : raw
+        return Double(digits) ?? ExternalActivity.defaultTTL
     }
 }

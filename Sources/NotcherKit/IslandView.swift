@@ -67,6 +67,7 @@ public struct IslandRootView: View {
     @ObservedObject var power: PowerEngine
     @ObservedObject var harbor: HarborStore
     @ObservedObject var link: LinkHost
+    @ObservedObject var center: ExternalCenter
     var notchWidth: CGFloat
     var hasNotch: Bool
     var onDropFiles: ([URL]) -> Void
@@ -77,6 +78,7 @@ public struct IslandRootView: View {
 
     public init(island: IslandState, timer: TimerEngine, media: MediaEngine,
                 power: PowerEngine, harbor: HarborStore, link: LinkHost,
+                center: ExternalCenter,
                 notchWidth: CGFloat, hasNotch: Bool,
                 onDropFiles: @escaping ([URL]) -> Void,
                 onInteract: @escaping () -> Void = {})
@@ -87,6 +89,7 @@ public struct IslandRootView: View {
         self.power = power
         self.harbor = harbor
         self.link = link
+        self.center = center
         self.notchWidth = notchWidth
         self.hasNotch = hasNotch
         self.onDropFiles = onDropFiles
@@ -101,11 +104,11 @@ public struct IslandRootView: View {
                     .transition(.scale(scale: 0.92).combined(with: .opacity))
             case .compact:
                 CompactView(island: island, timer: timer, media: media, link: link,
-                            onInteract: onInteract)
+                            center: center, onInteract: onInteract)
                     .transition(.scale(scale: 0.92).combined(with: .opacity))
             case .expanded:
                 ExpandedView(island: island, timer: timer, media: media, power: power,
-                             harbor: harbor, link: link, onInteract: onInteract)
+                             harbor: harbor, link: link, center: center, onInteract: onInteract)
                     .transition(.scale(scale: 0.94).combined(with: .opacity))
             }
         }
@@ -276,6 +279,7 @@ struct CompactView: View {
     @ObservedObject var timer: TimerEngine
     @ObservedObject var media: MediaEngine
     @ObservedObject var link: LinkHost
+    @ObservedObject var center: ExternalCenter
     var onInteract: () -> Void = {}
 
     var body: some View {
@@ -380,6 +384,15 @@ struct CompactView: View {
                     media.playPause()
                 }
                 CompactMediaButton(system: "forward.fill", label: "Next track") { media.next() }
+            case .external:
+                if let e = center.visible {
+                    ExternalPillContent(icon: e.icon, title: e.title, subtitle: e.subtitle,
+                                        progress: e.progress, source: e.source)
+                } else {
+                    Text("Waterline clear")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
             case .none:
                 Image(systemName: "water.waves")
                     .foregroundStyle(.white.opacity(0.7))
@@ -409,6 +422,11 @@ struct CompactView: View {
             }
             return "iPhone timer"
         case .media: return "Now playing, \(mediaTitle)"
+        case .external:
+            if let e = center.visible {
+                return "\(e.title), from \(e.source)"
+            }
+            return "Third-party activity"
         case .none: return "Notcher"
         }
     }
@@ -452,6 +470,53 @@ public struct RemoteTimerPillContent: View {
     }
 }
 
+/// Pure pill content for a third-party waterline activity (value types only,
+/// snapshot-renderable without a live session).
+public struct ExternalPillContent: View {
+    public var icon: String
+    public var title: String
+    public var subtitle: String?
+    public var progress: Double?
+    public var source: String
+
+    public init(icon: String, title: String, subtitle: String?, progress: Double?, source: String) {
+        self.icon = icon
+        self.title = title
+        self.subtitle = subtitle
+        self.progress = progress
+        self.source = source
+    }
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(.teal)
+                .font(.system(size: 13, weight: .semibold))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(.white)
+                    .tracking(-0.2)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            if let p = progress {
+                Meter(value: p, color: .teal)
+                    .frame(width: 56)
+            }
+        }
+        // Accessibility: the containing pill button carries the label.
+        .accessibilityHidden(true)
+    }
+}
+
 struct CompactMediaButton: View {    var system: String
     var label: String
     var action: () -> Void
@@ -478,6 +543,7 @@ struct ExpandedView: View {
     @ObservedObject var power: PowerEngine
     @ObservedObject var harbor: HarborStore
     @ObservedObject var link: LinkHost
+    @ObservedObject var center: ExternalCenter
     var onInteract: () -> Void = {}
 
     var body: some View {
@@ -490,6 +556,7 @@ struct ExpandedView: View {
                     NowPlayingSection(media: media)
                     HarborSection(harbor: harbor)
                     LinkSection(link: link)
+                    AccessSection(center: center)
                     FooterRow(island: island)
                 }
                 .padding(14)
@@ -813,6 +880,48 @@ struct LinkSection: View {
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
             link.sendFile(url)
+        }
+    }
+}
+
+/// Waterline access: pending consent cards first, then the revocable grant
+/// list. This is the permission surface for IslandKit — attention
+/// management, stated as such.
+struct AccessSection: View {
+    @ObservedObject var center: ExternalCenter
+
+    var body: some View {
+        if !center.pending.isEmpty || !center.grants.isEmpty {
+            SectionCard(title: "Waterline access", system: "app.badge") {
+                ForEach(center.pending) { req in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("\(req.source) wants the waterline")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(.white)
+                        Text(req.title)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(1)
+                        HStack(spacing: 8) {
+                            Chip(title: "Allow") { center.approve(identityKey: req.identityKey) }
+                            Chip(title: "Deny") { center.deny(identityKey: req.identityKey) }
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Allow \(req.source) on the waterline?")
+                }
+                ForEach(center.grants, id: \.key) { grant in
+                    Toggle(grant.name, isOn: Binding(
+                        get: { grant.allowed },
+                        set: { center.setAllowed(identityKey: grant.key, allowed: $0) }
+                    ))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .toggleStyle(.switch)
+                    .tint(.teal)
+                    .accessibilityLabel("Waterline access for \(grant.name)")
+                }
+            }
         }
     }
 }

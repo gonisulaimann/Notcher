@@ -19,6 +19,7 @@ public final class IslandState: ObservableObject {
         case transfer
         case remoteTimer
         case media
+        case external
     }
 
     /// Transient flashes interrupt the idle state for a few seconds
@@ -65,15 +66,15 @@ public final class IslandState: ObservableObject {
     }
 
     /// Re-resolve which single activity owns the pill. Priority:
-    /// local timer › transfer › remote (iPhone) timer › media.
-    /// A mirrored iPhone timer is timer-class attention, but never preempts
-    /// something happening on this Mac right now.
-    public func resolve(timerActive: Bool, transferActive: Bool, remoteTimerActive: Bool, mediaPlaying: Bool) {
+    /// local timer › transfer › remote (iPhone) timer › media › external.
+    /// Third-party activities can never preempt anything alive on this Mac.
+    public func resolve(timerActive: Bool, transferActive: Bool, remoteTimerActive: Bool, mediaPlaying: Bool, externalActive: Bool) {
         let next: Activity
         if timerActive { next = .timer }
         else if transferActive { next = .transfer }
         else if remoteTimerActive { next = .remoteTimer }
         else if mediaPlaying { next = .media }
+        else if externalActive { next = .external }
         else { next = .none }
         if next != activity {
             IslandDebug.log("activity \(activity) -> \(next)")

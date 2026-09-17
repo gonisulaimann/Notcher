@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "Notcher", targets: ["Notcher"]),
+        .executable(name: "notcher", targets: ["notcher"]),
         .library(name: "LinkCore", targets: ["LinkCore"]),
         .library(name: "NotcherKit", targets: ["NotcherKit"]),
     ],
@@ -23,6 +24,11 @@ let package = Package(
             name: "Notcher",
             dependencies: ["NotcherKit", "LinkCore"],
             path: "Sources/Notcher"
+        ),
+        // IslandKit CLI: blocking on nothing, links AppKit only for open().
+        .executableTarget(
+            name: "notcher",
+            path: "CLI"
         ),
         // Offscreen snapshot harness for visual inspection (renders the real
         // island states to PNG; screencapture is permission-gated in dev).

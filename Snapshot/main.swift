@@ -21,6 +21,7 @@ struct Snap {
         let power = PowerEngine()
         let harbor = HarborStore()
         let link = LinkHost()
+        let center = ExternalCenter()
         link.attach(timer: timer, harbor: harbor, island: island)
 
         // Deterministic timer content: start, then freeze.
@@ -55,7 +56,7 @@ struct Snap {
 
         func root() -> IslandRootView {
             IslandRootView(island: island, timer: timer, media: media, power: power,
-                           harbor: harbor, link: link,
+                           harbor: harbor, link: link, center: center,
                            notchWidth: layout.notchWidth, hasNotch: layout.hasNotch,
                            onDropFiles: { _ in })
         }
@@ -125,6 +126,32 @@ struct Snap {
                 if let png = rep.representation(using: .png, properties: [:]) {
                     try? png.write(to: URL(fileURLWithPath: "/tmp/notcher-compact-remote.png"))
                     print("wrote /tmp/notcher-compact-remote.png \(img.width)x\(img.height)")
+                }
+            }
+        }
+
+        // 3c. third-party pill content with stub values (pure view).
+        do {
+            let pill = ZStack {
+                RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.black.opacity(0.85))
+                ExternalPillContent(icon: "hammer.fill", title: "Building API",
+                                    subtitle: "12 targets left", progress: 0.7, source: "Chef")
+                    .padding(.horizontal, 14)
+            }
+            let hosting = NSHostingView(rootView: AnyView(pill))
+            hosting.layer?.backgroundColor = NSColor.clear.cgColor
+            win.contentView = hosting
+            win.appearance = NSAppearance(named: .darkAqua)
+            place(NSSize(width: 348, height: 40))
+            win.orderFrontRegardless()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.7))
+            let hid = CGWindowID(win.windowNumber)
+            if let img = CGWindowListCreateImage(CGRect.null, .optionIncludingWindow, hid, [.boundsIgnoreFraming]) {
+                let rep = NSBitmapImageRep(cgImage: img)
+                rep.size = NSSize(width: img.width, height: img.height)
+                if let png = rep.representation(using: .png, properties: [:]) {
+                    try? png.write(to: URL(fileURLWithPath: "/tmp/notcher-compact-external.png"))
+                    print("wrote /tmp/notcher-compact-external.png \(img.width)x\(img.height)")
                 }
             }
         }

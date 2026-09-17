@@ -32,6 +32,17 @@
 	<true/>
 	<key>CFBundleIconFile</key>
 	<string>Notcher</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>dev.notcher.Notcher</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>notcher</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_notcherlink._tcp</string>

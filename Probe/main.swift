@@ -33,13 +33,14 @@ import SwiftUI
 //   MainActor.assumeIsolated + RunLoop.main.run pumps. No Task, no await.
 let probeMode = CommandLine.arguments.count >= 2 ? CommandLine.arguments[1] : ""
 switch probeMode {
-case "stress", "persistence", "poweredge", "naming", "firstrun":
+case "stress", "persistence", "poweredge", "naming", "firstrun", "external":
     MainActor.assumeIsolated {
         switch probeMode {
         case "stress": Probe.StressSync.runStress()
         case "persistence": Probe.StressSync.runPersistence()
         case "poweredge": Probe.StressSync.runPowerEdge()
         case "firstrun": Probe.StressSync.runFirstRun()
+        case "external": Probe.StressSync.runExternal()
         default: Probe.StressSync.runNaming()
         }
     }
@@ -372,10 +373,11 @@ struct Probe {
             _ = power
             let harbor = HarborStore()
             let link = LinkHost()
+        let center = ExternalCenter()
             link.attach(timer: timer, harbor: harbor, island: island)
 
             let root = IslandRootView(island: island, timer: timer, media: media, power: power,
-                                      harbor: harbor, link: link,
+                                      harbor: harbor, link: link, center: center,
                                       notchWidth: 179, hasNotch: true, onDropFiles: { _ in })
             let hosting = NSHostingView(rootView: root)
             let ctl = IslandController(content: hosting)
@@ -398,17 +400,17 @@ struct Probe {
             _ = bag
 
             // 1. Priority truth table under 200 rapid oscillations.
-            // Priority: timer › transfer › remoteTimer › media › none.
+            // Priority: timer › transfer › remoteTimer › media › external › none.
             var truthOK = true
             for i in 0 ..< 200 {
-                let ta = i % 2 == 0, tr = i % 3 == 0, re = i % 7 == 0, me = i % 5 == 0
-                island.resolve(timerActive: ta, transferActive: tr, remoteTimerActive: re, mediaPlaying: me)
+                let ta = i % 2 == 0, tr = i % 3 == 0, re = i % 7 == 0, me = i % 5 == 0, ex = i % 11 == 0
+                island.resolve(timerActive: ta, transferActive: tr, remoteTimerActive: re, mediaPlaying: me, externalActive: ex)
                 let expect: IslandState.Activity =
-                    ta ? .timer : (tr ? .transfer : (re ? .remoteTimer : (me ? .media : .none)))
+                    ta ? .timer : (tr ? .transfer : (re ? .remoteTimer : (me ? .media : (ex ? .external : .none))))
                 if island.activity != expect { truthOK = false; break }
             }
             check(truthOK, "stress priority truth table x200")
-            island.resolve(timerActive: false, transferActive: false, remoteTimerActive: false, mediaPlaying: false)
+            island.resolve(timerActive: false, transferActive: false, remoteTimerActive: false, mediaPlaying: false, externalActive: false)
             pump(0.6)
 
             // 2. Flash bursts (overlapping cancellation).
@@ -518,8 +520,7 @@ struct Probe {
             check(name("a.b.txt", taken: ["a.b.txt"]) == "a.b 2.txt", "naming multi-dot stem")
         }
 
-        /// First-run decision matrix: translocated always guides (even repeat
-        /// launches), normal first launch welcomes once, afterwards silence.
+        /// First-run decision matrix: translocated always guides (even repeat        /// launches), normal first launch welcomes once, afterwards silence.
         static func runFirstRun() {
             check(FirstRun.plan(translocated: false, didRun: false) == .welcomeTray,
                   "firstrun fresh launch welcomes")
@@ -533,6 +534,63 @@ struct Probe {
                   "firstrun normal path not translocated")
             check(FirstRun.isTranslocated(bundlePath: "/private/var/folders/xx/T/AppTranslocation/yy/d/Notcher.app") == true,
                   "firstrun translocation path detected")
+        }
+
+        /// IslandKit consent/TTL/eviction/priority/revocation table — pure
+        /// store, no UI, deterministic clock.
+        static func runExternal() {
+            let t0 = Date()
+            func act(_ id: String, _ source: String, _ priority: ExternalActivity.Priority = .normal, ttl: TimeInterval = 120) -> ExternalActivity {
+                ExternalActivity(id: id, source: source, title: "T " + id, priority: priority, ttl: ttl, now: t0)
+            }
+            // 1. Unknown source parks in consent, shows nothing.
+            var s = ExternalStore()
+            let d1 = s.submit(act("a", "Chef"), now: t0)
+            check(d1 == .pendingConsent(firstSeen: true) && s.visible(now: t0) == nil,
+                  "external first push pends, shows nothing")
+            // 2. Repeat push does not duplicate the card.
+            let d2 = s.submit(act("b", "Chef"), now: t0.addingTimeInterval(1))
+            check(d2 == .pendingConsent(firstSeen: false) && s.pending.count == 1,
+                  "external repeat push collapses to one card")
+            // 3. Approve shows the first activity.
+            s.approve(identityKey: "source:Chef")
+            check(s.visible(now: t0)?.id == "a", "external approve reveals")
+            // 4. Priority class beats recency; recency breaks ties.
+            s.submit(act("low-new", "Chef", .low), now: t0.addingTimeInterval(2))
+            s.submit(act("high-old", "Ops", .high), now: t0.addingTimeInterval(2))
+            var s2 = s
+            s2.grants["source:Ops"] = true
+            s2.submit(act("high-old", "Ops", .high), now: t0.addingTimeInterval(3))
+            check(s2.visible(now: t0)?.id == "high-old", "external priority beats recency")
+            // 5. TTL expiry recedes.
+            var s3 = ExternalStore(grants: ["source:X": true])
+            s3.submit(act("tmp", "X", .high, ttl: 5), now: t0)
+            check(s3.visible(now: t0) != nil && s3.visible(now: t0.addingTimeInterval(6)) == nil,
+                  "external TTL expiry recedes")
+            // 6. Flood eviction: 12 ids, cap 8, highs retained.
+            var s4 = ExternalStore(grants: ["source:F": true])
+            for i in 0 ..< 10 {
+                s4.submit(act("low-\(i)", "F", .low), now: t0.addingTimeInterval(Double(i) + 1))
+            }
+            s4.grants["source:G"] = true
+            s4.submit(act("hi", "G", .high), now: t0.addingTimeInterval(20))
+            check(s4.activities.count == 8 && s4.activities["hi"] != nil,
+                  "external flood evicts oldest-lowest, keeps high")
+            // 7. Rate limit: same-instant resubmit drops.
+            var s5 = ExternalStore(grants: ["source:R": true])
+            let r1 = s5.submit(act("x", "R"), now: t0)
+            let r2 = s5.submit(act("x", "R"), now: t0)
+            check((r1 == .shown || r1 == .updated) && r2 == .droppedRateLimited,
+                  "external same-instant resubmit rate-limited")
+            // 8. Deny drops; revoke removes live activities too.
+            var s6 = ExternalStore()
+            s6.deny(identityKey: "source:Nope")
+            check(s6.submit(act("z", "Nope"), now: t0) == .droppedDenied, "external deny drops")
+            var s7 = ExternalStore(grants: ["source:Q": true])
+            s7.submit(act("q", "Q"), now: t0)
+            s7.revoke(identityKey: "source:Q")
+            check(s7.visible(now: t0) == nil && s7.grants["source:Q"] == false,
+                  "external revoke removes live activity")
         }
 
         static func runPersistence() {
