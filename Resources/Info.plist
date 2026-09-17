@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>Notcher</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.notcher.Notcher</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Notcher</string>
+	<key>CFBundleDisplayName</key>
+	<string>Notcher</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Notcher. All rights reserved.</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+	<key>CFBundleIconFile</key>
+	<string>Notcher</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_notcherlink._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Notcher uses the local network to discover your iPhone companion on the same Wi-Fi and sync timers, notes and files directly between your devices.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Notcher reads playback state from Music and Spotify and sends play/pause and skip commands when you use the notch controls.</string>
+</dict>
+</plist>

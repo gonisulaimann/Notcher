@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merge these keys into the Notcher Link iOS target's Info.plist
+  (Xcode generates the rest). They are REQUIRED: without NSBonjourServices
+  the app cannot browse _notcherlink._tcp, and without the usage string iOS
+  will not prompt for local-network access at all.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_notcherlink._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Notcher Link finds your Mac on the same Wi-Fi to sync timers, notes and files directly between your devices.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+</dict>
+</plist>

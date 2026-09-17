@@ -1,0 +1,23 @@
+# Build outputs
+.build/
+dist/
+
+# Bundled app copies (dev + release artifacts; rebuilt by scripts)
+Notcher.app/
+
+# External tool droppings (not ours; never commit)
+.freebuff/
+
+# Snapshots / probe residue
+*.dmg
+*.png
+probe-*.txt
+notcher-probe-note.txt
+
+# macOS
+.DS_Store
+
+# SwiftPM
+.swiftpm/
+*.o
+*.d
