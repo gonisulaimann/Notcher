@@ -156,6 +156,47 @@ struct Snap {
             }
         }
 
+        // 3d. Godmode key beats (deterministic advance, no timers).
+        do {
+            let f = screen.frame
+            let corner = CGRect(x: f.maxX - 224, y: f.minY + 40, width: 200, height: 40)
+            let notch = CGRect(x: f.midX - 174, y: f.maxY - 40 + 2, width: 348, height: 40)
+            let ov = Overture(corner: corner, notchFrame: notch, reduceMotion: false)
+            for _ in 0 ..< 4 { ov.advance() } // greetings beat
+            let hosting = NSHostingView(rootView: AnyView(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.black.opacity(0.85))
+                    OvertureView(overture: ov)
+                        .padding(.horizontal, 14)
+                }))
+            hosting.layer?.backgroundColor = NSColor.clear.cgColor
+            win.contentView = hosting
+            win.appearance = NSAppearance(named: .darkAqua)
+            place(NSSize(width: 348, height: 40))
+            win.orderFrontRegardless()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.7))
+            let hid = CGWindowID(win.windowNumber)
+            if let img = CGWindowListCreateImage(CGRect.null, .optionIncludingWindow, hid, [.boundsIgnoreFraming]) {
+                let rep = NSBitmapImageRep(cgImage: img)
+                rep.size = NSSize(width: img.width, height: img.height)
+                if let png = rep.representation(using: .png, properties: [:]) {
+                    try? png.write(to: URL(fileURLWithPath: "/tmp/notcher-overture-greet.png"))
+                    print("wrote /tmp/notcher-overture-greet.png \(img.width)x\(img.height)")
+                }
+            }
+            for _ in 0 ..< 2 { ov.advance() } // vocabFile beat
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+            let hid2 = CGWindowID(win.windowNumber)
+            if let img2 = CGWindowListCreateImage(CGRect.null, .optionIncludingWindow, hid2, [.boundsIgnoreFraming]) {
+                let rep2 = NSBitmapImageRep(cgImage: img2)
+                rep2.size = NSSize(width: img2.width, height: img2.height)
+                if let png2 = rep2.representation(using: .png, properties: [:]) {
+                    try? png2.write(to: URL(fileURLWithPath: "/tmp/notcher-overture-timer.png"))
+                    print("wrote /tmp/notcher-overture-timer.png \(img2.width)x\(img2.height)")
+                }
+            }
+        }
+
         // 4. expanded, dark
         island.mode = .expanded
         shoot(NSSize(width: 404, height: 468), "expanded-dark", dark: true)

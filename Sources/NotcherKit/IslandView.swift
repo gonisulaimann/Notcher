@@ -517,6 +517,81 @@ public struct ExternalPillContent: View {
     }
 }
 
+/// Godmode overture content: one view, beat-switched. Glowing pill for the
+/// arc, greeting montage, then the 3-beat vocabulary. Any tap cancels
+/// (via onTap) — the moment is skippable by definition.
+public struct OvertureView: View {
+    @ObservedObject var overture: Overture
+    var onTap: () -> Void = {}
+
+    public init(overture: Overture, onTap: @escaping () -> Void = {}) {
+        self.overture = overture
+        self.onTap = onTap
+    }
+
+    public var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                beatContent
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .animation(overture.reduceMotion ? Animation.easeOut(duration: 0.1)
+                                             : Animation.spring(response: 0.3, dampingFraction: 0.85),
+                       value: overture.beatIndex)
+            .animation(.easeOut(duration: 0.12), value: overture.greetingIndex)
+        }
+        .buttonStyle(.plain)
+        .background(IslandGlass(cornerRadius: 22))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .strokeBorder(.orange.opacity(0.55), lineWidth: 1.5))
+        .shadow(color: .orange.opacity(0.35), radius: 18, y: 0)
+        .accessibilityLabel("Welcome to Notcher. Activate to skip the introduction.")
+    }
+
+    @ViewBuilder
+    private var beatContent: some View {
+        switch overture.beats[overture.beatIndex] {
+        case .corner, .arc:
+            Circle()
+                .fill(Color.orange.opacity(0.9))
+                .frame(width: 8, height: 8)
+            Text("✦")
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.9))
+        case .greetings:
+            Text(Overture.greetings[overture.greetingIndex % Overture.greetings.count])
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .tracking(-0.2)
+                .id("greet-\(overture.greetingIndex)")
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+        case .vocabTimer:
+            Image(systemName: "timer")
+                .foregroundStyle(.orange).font(.system(size: 14, weight: .semibold))
+            Text("25:00")
+                .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.white)
+        case .vocabFile:
+            Image(systemName: "tray.and.arrow.down.fill")
+                .foregroundStyle(.green).font(.system(size: 14, weight: .semibold))
+            Text("park anything")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white)
+        case .vocabWave:
+            Image(systemName: "waveform")
+                .foregroundStyle(.pink).font(.system(size: 14, weight: .semibold))
+            Text("now playing")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white)
+        case .recede:
+            Image(systemName: "water.waves")
+                .foregroundStyle(.white.opacity(0.8)).font(.system(size: 13))
+        }
+    }
+}
+
 struct CompactMediaButton: View {    var system: String
     var label: String
     var action: () -> Void

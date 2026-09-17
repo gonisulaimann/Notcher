@@ -218,17 +218,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let action = FirstRun.plan(translocated: translocated, didRun: didRun) else { return }
         UserDefaults.standard.set(true, forKey: FirstRun.didRunKey)
         switch action {
-        case .welcomeTray:
-            island.presentPinned()
-            island.showFlash(icon: "water.waves",
-                             text: "Welcome to Notcher — hover the notch anytime",
-                             seconds: 8)
+        case .overture:
+            startOverture()
         case .translocatedTray:
             island.presentPinned()
             island.showFlash(icon: "arrow.down.doc.fill",
                              text: "Running from the disk image — drag Notcher to Applications",
                              seconds: 10)
         }
+    }
+
+    // MARK: - Godmode overture
+
+    private var overture: Overture?
+    private var overturePoll: Timer?
+    private var overtureBeatShown = -1
+    private var savedHosting: NSView?
+    private var savedOutsideClick: (() -> Void)?
+    private var savedEscape: (() -> Void)?
+
+    private func startOverture() {
+        guard let ctl = controller,
+              let screen = NSScreen.main,
+              overture == nil
+        else { return }
+        let f = screen.frame
+        let corner = CGRect(x: f.maxX - 224, y: f.minY + 40, width: 200, height: 40)
+        // Land on the compact pill geometry (centered top).
+        let target = CGRect(x: f.midX - 174, y: f.maxY - 40 + 2, width: 348, height: 40)
+        let ov = Overture(corner: corner, notchFrame: target,
+                          reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        ov.onDone = { [weak self] in
+            Task { @MainActor in self?.endOverture() }
+        }
+        overture = ov
+        // Swap content; reroute every exit to cancel.
+        savedHosting = ctl.panel.contentView
+        let view = OvertureView(overture: ov) { [weak self] in
+            Task { @MainActor in self?.cancelOverture() }
+        }
+        let hosting = NSHostingView(rootView: view)
+        hosting.layer?.backgroundColor = NSColor.clear.cgColor
+        ctl.panel.contentView = hosting
+        savedOutsideClick = ctl.onOutsideClick
+        savedEscape = ctl.onEscape
+        ctl.onOutsideClick = { [weak self] in
+            Task { @MainActor in self?.cancelOverture() }
+        }
+        ctl.onEscape = { [weak self] in
+            Task { @MainActor in self?.cancelOverture() }
+        }
+        ctl.showCustom(ov.frame(at: 0), animate: false)
+        overtureBeatShown = 0
+        ov.start()
+        // Advance frames on beats: one guarded op per beat change, never a
+        // per-tick window op (the poll itself is displayless).
+        overturePoll?.invalidate()
+        overturePoll = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self, weak ov, weak ctl] _ in
+            Task { @MainActor in
+                guard let self, let ov, let ctl, self.overture === ov, !ov.finished else { return }
+                if ov.beatIndex != self.overtureBeatShown {
+                    self.overtureBeatShown = ov.beatIndex
+                    ctl.showCustom(ov.frame(at: ov.beatIndex), animate: true)
+                }
+                if ov.finished { self.endOverture() }
+            }
+        }
+    }
+
+    private func cancelOverture() {
+        overture?.cancel()
+        // cancel() fires onDone synchronously when unfinished.
+        if overture != nil { endOverture() }
+    }
+
+    private func endOverture() {
+        guard let ctl = controller, overture != nil else { return }
+        overture = nil
+        overturePoll?.invalidate()
+        overturePoll = nil
+        overtureBeatShown = -1
+        if let saved = savedHosting {
+            ctl.panel.contentView = saved
+            savedHosting = nil
+        }
+        ctl.onOutsideClick = savedOutsideClick
+        ctl.onEscape = savedEscape
+        savedOutsideClick = nil
+        savedEscape = nil
+        engineChanged()
     }
 
     @objc private func systemDidWake(_: Notification) {

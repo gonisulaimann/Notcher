@@ -89,6 +89,20 @@ public final class IslandController {
 
     public var notchLayout: NotchGeometry.Layout { layout }
 
+    /// Explicit frames for the Godmode overture (the only caller). Bypasses
+    /// the diff guard on purpose: the sequence owns every frame. Normal
+    /// show() calls resume guarding afterwards.
+    public func showCustom(_ frame: NSRect, animate: Bool) {
+        currentKind = nil
+        currentAllowKey = false
+        panel.allowKey = false
+        if panel.isKeyWindow { panel.resignKey() }
+        currentSize = frame.size
+        IslandDebug.log("showCustom frame=\(frame)")
+        panel.setFrame(frame, display: true, animate: animate)
+        if !panel.isVisible { panel.orderFrontRegardless() }
+    }
+
     /// Explicit user interaction only (clicks, menu actions). Hovering must
     /// never call this — activating here steals keyboard focus from the
     /// frontmost app. Text fields and buttons need it before they work.

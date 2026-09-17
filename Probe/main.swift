@@ -33,13 +33,14 @@ import SwiftUI
 //   MainActor.assumeIsolated + RunLoop.main.run pumps. No Task, no await.
 let probeMode = CommandLine.arguments.count >= 2 ? CommandLine.arguments[1] : ""
 switch probeMode {
-case "stress", "persistence", "poweredge", "naming", "firstrun", "external":
+case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "external":
     MainActor.assumeIsolated {
         switch probeMode {
         case "stress": Probe.StressSync.runStress()
         case "persistence": Probe.StressSync.runPersistence()
         case "poweredge": Probe.StressSync.runPowerEdge()
         case "firstrun": Probe.StressSync.runFirstRun()
+        case "godmode": Probe.StressSync.runGodmode()
         case "external": Probe.StressSync.runExternal()
         default: Probe.StressSync.runNaming()
         }
@@ -520,10 +521,11 @@ struct Probe {
             check(name("a.b.txt", taken: ["a.b.txt"]) == "a.b 2.txt", "naming multi-dot stem")
         }
 
-        /// First-run decision matrix: translocated always guides (even repeat        /// launches), normal first launch welcomes once, afterwards silence.
+        /// First-run decision matrix: translocated always guides (even repeat
+        /// launches), normal first launch plays the overture once, afterwards silence.
         static func runFirstRun() {
-            check(FirstRun.plan(translocated: false, didRun: false) == .welcomeTray,
-                  "firstrun fresh launch welcomes")
+            check(FirstRun.plan(translocated: false, didRun: false) == .overture,
+                  "firstrun fresh launch plays overture")
             check(FirstRun.plan(translocated: false, didRun: true) == nil,
                   "firstrun repeat launch silent")
             check(FirstRun.plan(translocated: true, didRun: false) == .translocatedTray,
@@ -534,6 +536,51 @@ struct Probe {
                   "firstrun normal path not translocated")
             check(FirstRun.isTranslocated(bundlePath: "/private/var/folders/xx/T/AppTranslocation/yy/d/Notcher.app") == true,
                   "firstrun translocation path detected")
+        }
+
+        /// Godmode overture: deterministic beats, exact frames, cancel path,
+        /// reduce-motion variant, and a live timed run to completion.
+        static func runGodmode() {
+            let corner = CGRect(x: 1246, y: 40, width: 200, height: 40)
+            let notch = CGRect(x: 561, y: 918, width: 348, height: 40)
+            // 1. Structure: beats, frames, schedule cohere.
+            let ov = Overture(corner: corner, notchFrame: notch, reduceMotion: false)
+            check(ov.count == 9, "godmode full beat count (\(ov.count))")
+            check(ov.frame(at: 0) == corner && ov.frame(at: ov.count - 1) == notch,
+                  "godmode arc endpoints exact")
+            check(Overture.easeOutCubic(0) == 0 && Overture.easeOutCubic(1) == 1,
+                  "godmode easing endpoints")
+            let mid = Overture.lerp(corner, notch, t: 0.5)
+            check(mid == CGRect(x: 903.5, y: 479, width: 274, height: 40),
+                  "godmode lerp midpoint exact")
+            // 2. Manual advance visits every beat in order, then finishes.
+            var seen: [Overture.Beat] = []
+            var guard_ = 0
+            while ov.advance(), guard_ < 20 {
+                guard_ += 1
+                seen.append(ov.beats[ov.beatIndex])
+            }
+            check(ov.finished && seen.count == ov.count - 1 && !ov.advance(),
+                  "godmode manual walk completes (\(seen.count) steps)")
+            // 3. Cancel path fires onDone exactly once and finishes.
+            let ov2 = Overture(corner: corner, notchFrame: notch, reduceMotion: false)
+            var doneCount = 0
+            ov2.onDone = { doneCount += 1 }
+            _ = ov2.advance(); _ = ov2.advance()
+            ov2.cancel()
+            ov2.cancel()
+            check(ov2.finished && doneCount == 1, "godmode cancel finishes once")
+            // 4. Reduce-motion variant: short, static, same endpoints.
+            let ovr = Overture(corner: corner, notchFrame: notch, reduceMotion: true)
+            check(ovr.count == 3 && ovr.frame(at: 0) == corner && ovr.frame(at: 2) == notch,
+                  "godmode reduced variant coherent")
+            // 5. Live timed run: real timers to completion (~4 s).
+            let ov3 = Overture(corner: corner, notchFrame: notch, reduceMotion: false)
+            var liveDone = false
+            ov3.onDone = { liveDone = true }
+            ov3.start()
+            RunLoop.main.run(until: Date().addingTimeInterval(4.5))
+            check(liveDone && ov3.finished, "godmode live run completes on schedule")
         }
 
         /// IslandKit consent/TTL/eviction/priority/revocation table — pure
