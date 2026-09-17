@@ -434,3 +434,31 @@ closure removed. No behavior change; matrix green.
   the expanded tray on a stable SDK; idle/compact stay hand-tuned. The
   identical dark/light snapshot outputs prove the forced-dark design renders
   independent of window appearance — by construction, not accident.
+
+---
+
+# Phase 5 — brand surface rewrite (product code FROZEN)
+
+- Org prerequisite: `notcher` org does NOT exist (API 404, rechecked at
+  deploy time). Owner creates it; until then the org move + redirect page
+  are HELD, not stalled — everything below is built and the live site is
+  already upgraded in place. Product repo stays at gonisulaimann/Notcher.
+- README rewritten to pitch voice (boring.notch cited as inspiration for
+  warmth/second-person/honest-warnings; feature sprawl explicitly rejected
+  in favor of one-waterline discipline). Both Gatekeeper bypasses verbatim;
+  terminal method recommended as in the reference. Voice check applied per
+  sentence: want-it or truth-about-getting-it.
+- Landing page upgraded on the live deployment
+  (https://gonisulaimann.github.io/Notcher/): claim headline "Your notch,
+  alive." with #ff9f0a accent, floating glass nav, GitHub badge, Apple-logo
+  CTA, ambient hero glow, live-ticking CSS pill (5-line JS countdown —
+  the one-waterline motion, demonstrated). Verified: desktop + small-screen
+  renders via headless Chrome; HTML parser-clean.
+- Responsive note: a 390 px headless shot showed overflow, proven by
+  media-query probe to be a ~500 px headless layout floor (red applied,
+  lime did not), NOT a page defect — breakpoints verified at 500 px and the
+  560 px query path is correct for real phones. Documented, not chased.
+- URLs: repo https://github.com/gonisulaimann/Notcher,
+  release https://github.com/gonisulaimann/Notcher/releases/tag/v0.2.1,
+  site https://gonisulaimann.github.io/Notcher/ (target future:
+  https://notcher.github.io/ with this URL kept as redirect).
