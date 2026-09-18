@@ -1,9 +1,13 @@
 # Say hello to Notcher — the tide line between your Mac and your iPhone.
 
-One live activity in the notch: your timer, your transfers, your music.
-Drag files onto the notch to park them. Pair your iPhone over the local
-network and flick a timer across. When nothing is alive, the island melts
-into the camera housing. No widgets. No cloud. No noise.
+One live activity in the notch: your timer, your transfers, your music —
+with real album art. The island **hugs the camera housing** (never behind
+it), blooms into the tray on hover, mirrors volume and brightness as
+native-feeling HUDs, shows a dot when an app uses your camera or mic, and
+can keep an opt-in clipboard shelf — all with one continuous spring-morph
+between states. Drag files onto the notch to park them. Pair your iPhone
+over the local network and flick a timer across. When nothing is alive,
+the island melts into the housing. No widgets. No cloud. No noise.
 
 ![Notcher island tray](docs/images/notcher-expanded-dark.png)
 
@@ -26,7 +30,7 @@ into the camera housing. No widgets. No cloud. No noise.
 **You need:** macOS 14 or later, and a MacBook with a notch
 (no notch? it falls back to a floating capsule).
 
-1. Download **Notcher-0.4.0.dmg** from
+1. Download **Notcher-0.5.0.dmg** from
    [Releases](https://github.com/gonisulaimann/Notcher/releases).
 2. Open the DMG and drag Notcher into Applications.
 3. The first-launch warning is EXPECTED — the build is ad-hoc signed, and
@@ -55,6 +59,11 @@ Done — it launches normally from then on.
   — the notch becomes your countdown.
 - Open the tray → iPhone Link, and voilà — a six-digit pairing code for
   your iPhone. Start a timer there and it ticks in both places.
+- Change volume or brightness anywhere, and voilà — the notch shows the
+  HUD (press Option while adjusting for brightness on external displays).
+- Open the tray → Privacy to watch camera/mic dots light up live.
+- Open the tray → Shelf to enable the clipboard shelf (off by default;
+  everything stays on this Mac).
 - Quit from the tray footer when you're done, not by killing the process.
 
 ## The iPhone companion
@@ -74,8 +83,8 @@ iPhone is still pending, honestly marked in the engineering history.
 
 ## Build from source
 
-Requirements: macOS with Swift toolchain (Command Line Tools are enough —
-no Xcode needed for the Mac app).
+Requirements: macOS with the Swift toolchain. Xcode is recommended —
+recent SwiftUI macros can fail under Command Line Tools alone.
 
 ```bash
 git clone https://github.com/gonisulaimann/Notcher.git
@@ -95,7 +104,12 @@ engineering history — every claim, evidence attached.
 ## Privacy
 
 Local network only. Pairing code never leaves your devices. Text and files
-move only when you explicitly send them. No clipboard snooping, no analytics.
+move only when you explicitly send them. The clipboard shelf is opt-in,
+lives in memory on this Mac, and nothing is ever sent anywhere. One
+exception, stated plainly: Spotify album art loads from Spotify's image
+servers (the track's artwork URL — their servers see that request, we see
+nothing). Music artwork is read locally from the Music app and never
+touches the network. No analytics.
 
 ## License
 

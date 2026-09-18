@@ -12,6 +12,10 @@
 # suitable for this Mac and for side-loading; Gatekeeper behavior for ad-hoc
 # builds is documented in dist/README-install.txt inside the DMG.
 set -euo pipefail
+if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app ]]; then
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+  echo "==> Using Xcode toolchain ($DEVELOPER_DIR)"
+fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 

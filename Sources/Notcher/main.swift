@@ -22,9 +22,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var center = ExternalCenter()
     private var shots = ShotWatch()
     private var socket = SocketServer()
+    private var clipboard = ClipboardEngine()
+    private var hudEngine = HudEngine()
+    private var privacy = PrivacyWatch()
     private var controller: IslandController?
     private var statusItem: NSStatusItem?
     private var bag = Set<AnyCancellable>()
+    private var overture: Overture?
 
     func applicationDidFinishLaunching(_: Notification) {
         // Single instance: the repo copy and an installed copy share one
@@ -125,16 +129,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.engineChanged()
         }
 
+        // New surfaces: HUD, clipboard, privacy sensors.
+        hudEngine.onVolumeChange = { [weak self] value, muted in
+            self?.island.showHud(.init(kind: .volume(muted: muted), value: value))
+        }
+        hudEngine.onBrightnessChange = { [weak self] value in
+            self?.island.showHud(.init(kind: .brightness, value: value))
+        }
+        privacy.cameraActiveChanged = { [weak self] active in
+            guard let self, active else { return }
+            self.island.showFlash(icon: "video.fill", text: "Camera in use", seconds: 2.5)
+        }
+        privacy.micActiveChanged = { [weak self] active in
+            guard let self, active else { return }
+            self.island.showFlash(icon: "mic.fill", text: "Microphone in use", seconds: 2.5)
+        }
+
         // Island UI -> window. All roads lead through requestRefresh(),
         // which coalesces a burst of publications into one window op per
-        // runloop turn (see IslandController.show's diff guard — the second
-        // half of the flicker fix). High-frequency publishers are reduced to
-        // edges: per-chunk transfer progress and per-tick remote mirrors must
-        // never re-resolve the island.
+        // runloop turn. In v2 the window op is a pure metrics handoff
+        // (shaped hit-testing) — the morph itself lives in SwiftUI.
         island.$mode.sink { [weak self] _ in self?.requestRefresh() }.store(in: &bag)
         island.$activity.sink { [weak self] _ in self?.requestRefresh() }.store(in: &bag)
         island.$flash.sink { [weak self] _ in self?.requestRefresh() }.store(in: &bag)
-        island.$dropTarget.sink { [weak self] _ in self?.requestRefresh() }.store(in: &bag)
+        // Overture beats morph the surface; the view reads overtureBeat
+        // directly for its content, this subscription moves the metrics.
+        island.$overtureBeat.sink { [weak self] _ in self?.requestRefresh() }.store(in: &bag)
         link.$peers
             .map { $0.map(\.deviceID).sorted() }
             .removeDuplicates()
@@ -150,41 +170,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .removeDuplicates()
             .sink { [weak self] _ in self?.engineChanged() }
             .store(in: &bag)
-        // External visibility changes are already edge-shaped (nil edges and
-        // content replacement both matter for the pill), but they arrive at
-        // most on user/consent/TTL events — never per-tick.
         center.$visible
             .map { $0?.id }
             .removeDuplicates()
             .sink { [weak self] _ in self?.engineChanged() }
             .store(in: &bag)
 
-        // Window.
-        let root = IslandRootView(
-            island: island, timer: timer, media: media, power: power,
-            harbor: harbor, link: link, center: center,
-            notchWidth: 0, hasNotch: true,
-            onDropFiles: { [weak self] urls in self?.dropFiles(urls) },
-            onInteract: { [weak self] in self?.userInteracting() }
-        )
-        let hosting = NSHostingView(rootView: root)
-        hosting.layer?.backgroundColor = NSColor.clear.cgColor
-        let ctl = IslandController(content: hosting)
+        // Window (single canvas; content morphs inside it).
+        let ctl = IslandController()
+        controller = ctl
         let layout = ctl.notchLayout
-        // Rebuild root with real geometry (value types need the final copy).
-        hosting.rootView = IslandRootView(
+        ctl.setRoot(IslandRootView(
             island: island, timer: timer, media: media, power: power,
             harbor: harbor, link: link, center: center,
-            notchWidth: layout.notchWidth, hasNotch: layout.hasNotch,
+            clipboard: clipboard, hudEngine: hudEngine, privacy: privacy,
+            layout: layout,
             onDropFiles: { [weak self] urls in self?.dropFiles(urls) },
             onInteract: { [weak self] in self?.userInteracting() }
-        )
+        ))
         ctl.onOutsideClick = { [weak self] in
             guard let self, self.island.mode == .expanded, !self.island.pinned else { return }
             self.island.collapse()
         }
-        ctl.onEscape = { [weak self] in self?.island.collapse() }
-        controller = ctl
+        ctl.onEscape = { [weak self] in
+            guard let self else { return }
+            if self.overture != nil {
+                self.cancelOverture()
+            } else {
+                self.island.collapse()
+            }
+        }
+        ctl.orderFront()
 
         setupStatusItem()
         registerURLHandler()
@@ -223,11 +239,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The first-run moment: LSUIElement apps show no Dock icon and open
-    /// nothing, so a fresh user gets a guided tray instead of silence.
+    /// nothing, so a fresh user gets a guided intro instead of silence.
     /// A translocated launch (running from the disk image) always guides
-    /// toward /Applications — that IS the partial-Gatekeeper path, the only
-    /// denied-adjacent state this process can ever observe (a fully denied
-    /// launch never reaches code).
+    /// toward /Applications — that IS the partial-Gatekeeper path.
     private func firstRunMoment() {
         let translocated = FirstRun.isTranslocated(bundlePath: Bundle.main.bundlePath)
         let didRun = UserDefaults.standard.bool(forKey: FirstRun.overtureKey)
@@ -244,62 +258,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Godmode overture
+    // MARK: - Godmode overture (v2: beats inside the morphing surface)
 
-    private var overture: Overture?
-    private var overturePoll: Timer?
-    private var overtureBeatShown = -1
-    private var savedHosting: NSView?
-    private var savedOutsideClick: (() -> Void)?
-    private var savedEscape: (() -> Void)?
+    private var overtureBag = Set<AnyCancellable>()
 
     private func startOverture() {
-        guard let ctl = controller,
-              let screen = NSScreen.main,
-              overture == nil
-        else { return }
-        let f = screen.frame
-        let corner = CGRect(x: f.maxX - 224, y: f.minY + 40, width: 200, height: 40)
-        // Land on the compact pill geometry (centered top).
-        let target = CGRect(x: f.midX - 174, y: f.maxY - 40 + 2, width: 348, height: 40)
-        let ov = Overture(corner: corner, notchFrame: target,
-                          reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        guard controller != nil, overture == nil else { return }
+        let ov = Overture(reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
         ov.onDone = { [weak self] in
             Task { @MainActor in self?.endOverture() }
         }
         overture = ov
-        // Swap content; reroute every exit to cancel.
-        savedHosting = ctl.panel.contentView
-        let view = OvertureView(overture: ov) { [weak self] in
-            Task { @MainActor in self?.cancelOverture() }
-        }
-        let hosting = NSHostingView(rootView: view)
-        hosting.layer?.backgroundColor = NSColor.clear.cgColor
-        ctl.panel.contentView = hosting
-        savedOutsideClick = ctl.onOutsideClick
-        savedEscape = ctl.onEscape
-        ctl.onOutsideClick = { [weak self] in
-            Task { @MainActor in self?.cancelOverture() }
-        }
-        ctl.onEscape = { [weak self] in
-            Task { @MainActor in self?.cancelOverture() }
-        }
-        ctl.showCustom(ov.frame(at: 0), animate: false)
-        overtureBeatShown = 0
+        island.pinned = false
+        island.overtureBeat = ov.beats[ov.beatIndex]
+        // Surface follows the beat machine; content reads overtureBeat.
+        ov.$beatIndex.sink { [weak self, weak ov] index in
+            guard let self, let ov, self.overture === ov else { return }
+            self.island.overtureBeat = ov.beats[index]
+        }.store(in: &overtureBag)
         ov.start()
-        // Advance frames on beats: one guarded op per beat change, never a
-        // per-tick window op (the poll itself is displayless).
-        overturePoll?.invalidate()
-        overturePoll = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self, weak ov, weak ctl] _ in
-            Task { @MainActor in
-                guard let self, let ov, let ctl, self.overture === ov, !ov.finished else { return }
-                if ov.beatIndex != self.overtureBeatShown {
-                    self.overtureBeatShown = ov.beatIndex
-                    ctl.showCustom(ov.frame(at: ov.beatIndex), animate: true)
-                }
-                if ov.finished { self.endOverture() }
-            }
-        }
     }
 
     private func cancelOverture() {
@@ -309,19 +286,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func endOverture() {
-        guard let ctl = controller, overture != nil else { return }
+        guard overture != nil else { return }
         overture = nil
-        overturePoll?.invalidate()
-        overturePoll = nil
-        overtureBeatShown = -1
-        if let saved = savedHosting {
-            ctl.panel.contentView = saved
-            savedHosting = nil
-        }
-        ctl.onOutsideClick = savedOutsideClick
-        ctl.onEscape = savedEscape
-        savedOutsideClick = nil
-        savedEscape = nil
+        overtureBag.removeAll()
+        island.overtureBeat = nil
         engineChanged()
     }
 
@@ -370,12 +338,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshWindow() {
         guard let ctl = controller else { return }
-        let animate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        switch island.mode {
-        case .idle: ctl.show(.idle, allowKey: false, animate: animate)
-        case .compact: ctl.show(.compact, allowKey: false, animate: animate)
-        case .expanded: ctl.show(.expanded, allowKey: true, animate: animate)
-        }
+        let metrics = island.surfaceMetrics(layout: ctl.notchLayout)
+        ctl.present(metrics: metrics,
+                    expanded: island.mode == .expanded,
+                    allowKey: island.mode == .expanded)
     }
 
     private func dropFiles(_ urls: [URL]) {

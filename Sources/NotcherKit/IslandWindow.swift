@@ -1,64 +1,68 @@
 import AppKit
 import SwiftUI
 
-/// Borderless floating panel that hugs the notch. It is always sized to fit
-/// exactly the visible island UI, so transparent regions never swallow menu
-/// bar clicks: idle covers only the dead notch space, compact is a small
-/// pill, expanded is a temporary tray.
+/// Borderless, non-activating panel for the island. The window is FIXED at
+/// the canvas size and never resizes; the visible island is a shaped SwiftUI
+/// surface inside it (MorphShape), and clicks outside that shape fall through
+/// to whatever is beneath (shaped hit-testing in IslandController).
 public final class IslandPanel: NSPanel {
     public var allowKey = false
     override public var canBecomeKey: Bool { allowKey }
     override public var canBecomeMain: Bool { false }
 }
 
-/// Soft radial dim behind the expanded tray. Argument for the extra window
-/// (per constitution, written down, not assumed): the tray is translucent
-/// glass over the menu bar; bright menu-bar content bleeds through and
-/// breaks the island's dark-glass illusion. A temporary scrim — visible
-/// ONLY while expanded, mouse-transparent, one level below the island —
-/// carves that space. It is not an always-on layer: it lives and dies with
-/// the expanded mode transition, guarded the same way.
-private final class ScrimView: NSView {
-    override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let colors = [NSColor.black.withAlphaComponent(0.38).cgColor,
-                      NSColor.clear.cgColor] as CFArray
-        guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                    colors: colors, locations: [0, 1]) else { return }
-        let c = CGPoint(x: bounds.midX, y: bounds.maxY - 60)
-        ctx.drawRadialGradient(grad, startCenter: c, startRadius: 40,
-                               endCenter: c, endRadius: max(bounds.width, bounds.height) * 0.62,
-                               options: .drawsAfterEndLocation)
-        super.draw(dirtyRect)
+/// Container that clips event delivery to the CURRENT morph shape: hits
+/// outside the path return nil, so clicks fall through to the menu bar and
+/// desktop beneath — no polling, no ignoresMouseEvents toggling, no missed
+/// fast moves. (Replaces the 30 Hz cursor watcher: same shaping, zero
+/// wakeups. The watcher cost ~3 % idle CPU by measurement.)
+final class ShapeHitView: NSView {
+    /// Window-coordinates test, installed by the controller per present().
+    var test: ((NSPoint) -> Bool)?
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let test, test(point) else { return nil }
+        return super.hitTest(point)
     }
 }
 
+/// Single-window island host.
+///
+/// v2 architecture (replaces the per-mode window resizing of ≤0.4):
+/// - One panel, fixed at `IslandMetrics.canvasSize`, top-anchored to the
+///   screen so the housing band always sits exactly over the camera notch.
+/// - Every state (idle → wings → slab → tray → HUD) is one `IslandMetrics`
+///   value handed to SwiftUI; the shape MORPHS with spring physics inside
+///   the window. The window itself never moves or resizes — no compositor
+///   churn, no flicker class of bugs, fully interruptible transitions.
+/// - Click-through: the content sits in a ShapeHitView that answers hits
+///   only inside the current morph path, so the menu bar and desktop stay
+///   clickable around the island (real hit-test shaping, not a rect, and
+///   no polling timer).
 @MainActor
 public final class IslandController {
     public let panel: IslandPanel
     private var screen: NSScreen
     private var layout: NotchGeometry.Layout
-    private var currentSize = NSSize.zero
-    private var currentKind: IslandSize?
-    private var currentAllowKey = false
+    private var metrics = IslandMetrics(width: 440, chinH: 0, chinW: 440,
+                                        shoulder: 0, bodyH: 0, corner: 0)
+    private var expandedVisible = false
     private var scrim: NSPanel?
     private var scrimVisible = false
+    private var hitView: ShapeHitView?
     nonisolated(unsafe) private var monitors: [Any] = []
 
     public var onOutsideClick: (() -> Void)?
     public var onEscape: (() -> Void)?
 
-    /// Lifetime window-op stats (dev tooling): real shows vs. diff-guard
-    /// no-ops. A healthy session shows noops >> calls.
-    public private(set) var showCalls = 0
-    public private(set) var showNoops = 0
+    /// Whether the hover-exclusion scrim window is currently on screen.
+    public var isScrimVisible: Bool { scrimVisible }
 
-    public init(content: NSView) {
+    public init() {
         screen = NSScreen.main ?? NSScreen.screens.first!
         layout = NotchGeometry.layout(for: screen)
 
         panel = IslandPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 40),
+            contentRect: NSRect(origin: .zero, size: IslandMetrics.canvasSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -66,14 +70,13 @@ public final class IslandController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        // The island is always dark glass (like the physical notch), in both
-        // system appearances — SwiftUI content forces .dark to match.
         panel.appearance = NSAppearance(named: .darkAqua)
         panel.level = NSWindow.Level(rawValue: 26) // above menu bar, below popups
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
         panel.isMovable = false
-        panel.contentView = content
+        panel.ignoresMouseEvents = false
+        placeCanvas()
 
         NotificationCenter.default.addObserver(
             self,
@@ -83,8 +86,8 @@ public final class IslandController {
         )
         monitors.append(NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
-                if !self.panel.frame.contains(NSEvent.mouseLocation) {
+                guard let self, self.panel.isVisible else { return }
+                if !self.containsCursor() {
                     self.onOutsideClick?()
                 }
             }
@@ -102,94 +105,105 @@ public final class IslandController {
         for m in monitors { NSEvent.removeMonitor(m) }
     }
 
-    @objc private func screensChanged(_: Notification) {
-        Task { @MainActor in
-            if let main = NSScreen.main { self.screen = main }
-            self.layout = NotchGeometry.layout(for: self.screen)
-            IslandDebug.log("screens changed, re-place \(self.currentSize)")
-            self.place(size: self.currentSize, animate: false)
-            // Re-glue the scrim if it is up.
-            if let kind = self.currentKind {
-                self.setScrim(kind == .expanded, animate: false)
-            }
+    // MARK: - Content
+
+    /// Install the SwiftUI root (NSHostingView). Called once by the
+    /// coordinator; the view reads island state and morphs itself.
+    /// Wrapped in a ShapeHitView so only the live shape takes events.
+    public func setRoot(_ view: some View) {
+        let hosting = NSHostingView(rootView: view)
+        hosting.frame = NSRect(origin: .zero, size: IslandMetrics.canvasSize)
+        hosting.layer?.backgroundColor = NSColor.clear.cgColor
+        hosting.autoresizingMask = [.width, .height]
+        let hit = ShapeHitView(frame: NSRect(origin: .zero, size: IslandMetrics.canvasSize))
+        hit.autoresizingMask = [.width, .height]
+        hit.addSubview(hosting)
+        // Reads live metrics at hit time: morphs never desync hit-testing.
+        hit.test = { [weak self] point in
+            guard let self else { return false }
+            return self.shapeContains(windowPoint: point, slop: 6)
         }
+        hitView = hit
+        panel.contentView = hit
     }
 
-    public var notchLayout: NotchGeometry.Layout { layout }
-
-    /// Explicit frames for the Godmode overture (the only caller). Bypasses
-    /// the diff guard on purpose: the sequence owns every frame. Normal
-    /// show() calls resume guarding afterwards.
-    public func showCustom(_ frame: NSRect, animate: Bool) {
-        currentKind = nil
-        currentAllowKey = false
-        panel.allowKey = false
-        if panel.isKeyWindow { panel.resignKey() }
-        currentSize = frame.size
-        IslandDebug.log("showCustom frame=\(frame)")
-        panel.setFrame(frame, display: true, animate: animate)
+    public func orderFront() {
         if !panel.isVisible { panel.orderFrontRegardless() }
     }
 
-    /// Explicit user interaction only (clicks, menu actions). Hovering must
-    /// never call this — activating here steals keyboard focus from the
-    /// frontmost app. Text fields and buttons need it before they work.
+    // MARK: - Surface presentation
+
+    /// The coordinator's single window touch: hand over the surface's
+    /// metrics. No resizing, no reordering, no animation here — SwiftUI
+    /// owns every frame of the morph inside the window.
+    public func present(metrics: IslandMetrics, expanded: Bool, allowKey: Bool) {
+        self.metrics = metrics
+        presentCalls += 1
+        // The canvas window lives on screen for the whole app lifetime;
+        // SwiftUI melts the *shape* in idle, never the window.
+        if !panel.isVisible { panel.orderFrontRegardless() }
+        panel.allowKey = allowKey
+        if !allowKey, panel.isKeyWindow { panel.resignKey() }
+        setScrim(expanded, animate: true)
+        expandedVisible = expanded
+    }
+
     public func activateForInteraction() {
         panel.allowKey = true
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    // MARK: - Sizing
+    public var notchLayout: NotchGeometry.Layout { layout }
 
-    public enum IslandSize {
-        case idle, compact, expanded
+    /// Dev/probe introspection: how many metrics handoffs happened (the v2
+    /// analogue of the old showCalls counter).
+    public private(set) var presentCalls = 0
+    /// The metrics currently driving shaped hit-testing.
+    public var currentMetrics: IslandMetrics { metrics }
+
+    // MARK: - Geometry
+
+    private func placeCanvas() {
+        let f = screen.frame
+        let size = IslandMetrics.canvasSize
+        let x = f.midX - size.width / 2
+        let y = f.maxY - size.height
+        panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
     }
 
-    public func show(_ size: IslandSize, allowKey: Bool, animate: Bool) {
-        let w: CGFloat
-        let h: CGFloat
-        switch size {
-        case .idle:
-            w = layout.hasNotch ? max(180, layout.notchWidth + 72) : 210
-            h = layout.hasNotch ? layout.topInset + 6 : 30
-        case .compact:
-            w = 348
-            h = 40
-        case .expanded:
-            w = 404
-            h = 468
+    @objc private func screensChanged(_: Notification) {
+        Task { @MainActor in
+            if let main = NSScreen.main { self.screen = main }
+            self.layout = NotchGeometry.layout(for: self.screen)
+            IslandDebug.log("screens changed, re-place canvas")
+            self.placeCanvas()
+            // Re-glue a visible scrim; setScrim re-places when already on.
+            if self.scrimVisible { self.setScrim(true, animate: false) }
         }
-        let frame = frameFor(NSSize(width: w, height: h))
-        // Diff guard: redundant shows (same kind, same key posture, same
-        // frame) are the flicker engine — state publishers fire far more
-        // often than the window actually needs to move. Reordering frontmost
-        // and re-animating to an identical frame churns the compositor over
-        // the menu bar and reads as flicker. Mid-flight frames never compare
-        // equal, so genuine re-targets still animate smoothly.
-        if currentKind == size, currentAllowKey == allowKey, panel.frame.equalTo(frame) {
-            showNoops += 1
-            if !panel.isVisible { panel.orderFrontRegardless() }
-            return
-        }
-        showCalls += 1
-        IslandDebug.log("show \(size) allowKey=\(allowKey) animate=\(animate) frame=\(frame)")
-        currentKind = size
-        currentAllowKey = allowKey
-        panel.allowKey = allowKey
-        if !allowKey, panel.isKeyWindow {
-            panel.resignKey()
-        }
-        place(frame: frame, animate: animate)
-        if !panel.isVisible { panel.orderFrontRegardless() }
-        setScrim(size == .expanded, animate: animate)
     }
 
-    /// Scrim follows expanded mode with its own guard: no repeated fades.
-    public var isScrimVisible: Bool { scrimVisible }
+    /// Shape test in window coordinates (bottom-left origin), against live
+    /// metrics. Single implementation behind both the hit-test container
+    /// and the click-outside monitor.
+    private func shapeContains(windowPoint: NSPoint, slop: CGFloat) -> Bool {
+        let contentH = panel.contentView?.bounds.height ?? IslandMetrics.canvasSize.height
+        let tl = CGPoint(x: windowPoint.x, y: contentH - windowPoint.y)
+        return IslandMetrics.hitTest(tl, in: IslandMetrics.canvasSize, m: metrics, slop: slop)
+    }
+
+    /// Cursor containment against the CURRENT morph shape, for the global
+    /// click-outside monitor.
+    private func containsCursor() -> Bool {
+        guard panel.isVisible else { return false }
+        let mouse = NSEvent.mouseLocation
+        let windowPt = panel.convertFromScreen(NSRect(origin: mouse, size: .zero)).origin
+        return shapeContains(windowPoint: windowPt, slop: 0)
+    }
+
+    // MARK: - Scrim (expanded only)
 
     private func setScrim(_ on: Bool, animate: Bool) {
         if on == scrimVisible {
-            // Keep a visible scrim glued to the screen on geometry changes.
             if on, let sc = scrim { sc.setFrame(scrimFrame(), display: true) }
             return
         }
@@ -202,16 +216,13 @@ public final class IslandController {
                 sc = NSPanel(contentRect: scrimFrame(), styleMask: .borderless,
                              backing: .buffered, defer: false)
                 sc.isOpaque = false
-                sc.backgroundColor = .clear
+                sc.backgroundColor = NSColor(calibratedWhite: 0, alpha: 0.32)
                 sc.hasShadow = false
                 sc.level = NSWindow.Level(rawValue: 25)
                 sc.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
                 sc.hidesOnDeactivate = false
                 sc.isMovable = false
                 sc.ignoresMouseEvents = true
-                let v = ScrimView(frame: NSRect(origin: .zero, size: scrimFrame().size))
-                v.autoresizingMask = [.width, .height]
-                sc.contentView = v
                 sc.alphaValue = 0
                 scrim = sc
             }
@@ -219,7 +230,8 @@ public final class IslandController {
             sc.orderFrontRegardless()
             if animate {
                 NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.25
+                    ctx.duration = 0.3
+                    ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0.72, 0.28, 1)
                     sc.animator().alphaValue = 1
                 }
             } else {
@@ -228,7 +240,7 @@ public final class IslandController {
         } else if let sc = scrim {
             if animate {
                 NSAnimationContext.runAnimationGroup({ ctx in
-                    ctx.duration = 0.2
+                    ctx.duration = 0.22
                     sc.animator().alphaValue = 0
                 }, completionHandler: { [weak sc] in
                     sc?.orderOut(nil)
@@ -242,26 +254,7 @@ public final class IslandController {
 
     private func scrimFrame() -> NSRect {
         let f = screen.frame
-        let w: CGFloat = 560, h: CGFloat = 520
+        let w: CGFloat = 620, h: CGFloat = 620
         return NSRect(x: f.midX - w / 2, y: f.maxY - h + 2, width: w, height: h)
-    }
-
-    private func frameFor(_ size: NSSize) -> NSRect {
-        let f = screen.frame
-        let x = f.midX - size.width / 2
-        // Anchor the top edge just inside the screen top; idle on notch
-        // hardware overlaps the housing so the blend looks seamless.
-        let y = f.maxY - size.height + (layout.hasNotch ? 2 : 6)
-        return NSRect(x: x, y: y, width: size.width, height: size.height)
-    }
-
-    private func place(size: NSSize, animate: Bool) {
-        currentSize = size
-        panel.setFrame(frameFor(size), display: true, animate: animate)
-    }
-
-    private func place(frame: NSRect, animate: Bool) {
-        currentSize = frame.size
-        panel.setFrame(frame, display: true, animate: animate)
     }
 }

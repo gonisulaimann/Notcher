@@ -629,3 +629,97 @@ after hardware, the iPhone story told in motion rather than paragraphs.
 - Release + tag live; site + README repointed to 0.4.0.
 - Idle CPU re-measured: 0.37 % of one core over 30 s with socket listener +
   screenshot watcher active (was 0.23–0.27 %); ps average 0.0 %.
+
+## 0.5.0 "The Hug" — single-window architecture rebuild
+
+### Why
+
+- 0.4.0's compact pill (348×40, content vertically centered) put live text
+  INSIDE the hardware notch band — owner-confirmed live: track titles
+  swallowed by the physical housing. The old architecture (per-mode window
+  ops + NSWindowFrameAnimation + crossfaded SwiftUI) could not express the
+  fix, let alone feel premium.
+
+### What changed (architecture)
+
+- ONE borderless, click-through-shaped 440×594 canvas window (layer 26)
+  lives for the whole app lifetime; SwiftUI owns every frame of every
+  transition. No window resizing, no canned NSWindowFrameAnimation — the
+  old flicker-guard machinery is retired by design, not extended.
+- IslandSurface/MorphShape: six animatable scalars (width, chinH, chinW,
+  shoulder, bodyH, corner) define one continuous path. chinW ≈ notch+24 so
+  the chin COVERS the housing; the body always blooms BELOW contentTop =
+  chinH+shoulder. Wings/slab/HUD/expanded are the same path at different
+  scalars — every state change is one spring interpolation (response 0.45,
+  ζ 0.85; retargetable mid-flight). Shaped hit-testing reads the CURRENT
+  path with 6pt hysteresis; outside-canvas clicks are invisible to it.
+- Public runtime probes on this machine set the design: Spotify artwork
+  URLs OK; Music raw artwork (tdta) OK; brightness via IOKit is dead on
+  this OS (kIOReturnUnsupported) — volume HUD ships, brightness renders a
+  muted in-HUD state rather than a fake meter; camera/mic via public
+  CMIO/AudioObject properties; all fine.
+
+### New surfaces
+
+- Volume HUD (CoreAudio default-device listeners, in-place meter updates —
+  no re-morph per keypress, Apple-HUD behavior) with brightness state.
+- Privacy dots: camera/mic in-use, public APIs only.
+- Clipboard shelf: opt-in (off by default), 10-entry ring buffer, dedupe
+  window, memory-only, tray UI. Constitutional amendment (required: clipboard
+  was on the NOT-built list): allowed because it is (a) off unless the user
+  asks, (b) text-only, (c) never persisted, never synced, never leaves the
+  process, (d) a shelf in the tray, not a background scraper — it captures
+  only while the app runs and only what the user copies. The NOT-built ban
+  on clipboard *sync* stands unchanged.
+- Privacy disclosure (added in review, was missing): Spotify album art is
+  fetched from Spotify's image CDN — their servers see the artwork request.
+  Music artwork is read locally via Apple Events and never touches the
+  network. README Privacy + site FAQ updated to state this plainly.
+- Media pill: real album art (Spotify URL fetch / Music tdta, cached,
+  glyph fallback), progress line, rounded monospaced digits.
+- Overture rebuilt: all beats are in-window morphs (melt → greetings →
+  vocab slab beats → recede); live-timed run green in godmode probe.
+
+### Geometry proof (owner's exact screen, 1470×956, notch 179×32 @ x 645.5–824.5)
+
+- Canvas window verified on-screen: bounds x 515–955, layer 26.
+- Housing band (px 260–618 of the on-screen canvas) pixel-profiled:
+  baseline ~70 (white menu bar) → island ~17–25 (dark chin covering the
+  housing); ZERO bright content in the band across compact/HUD/flash/
+  overture states — also re-verified offscreen in the Snapshot harness.
+- HUD capture diff vs dead-app baseline: HUD capsule + wing text at
+  y 72–84pt, i.e. BELOW the 32pt housing; nothing renders inside it.
+- Idle melt: canvas window persists (515–955), shape melts to the idle
+  blend — window lifetime decoupled from surface states.
+
+### Matrix (all green, this machine)
+
+- Build: full workspace green (Xcode toolchain; CLT chokes on new Swift
+  macros — documented).
+- Probes: stress 12/12, persistence 4/4, poweredge 4/4, naming 5/5,
+  firstrun 6/6, godmode 8/8 (live run on schedule), overlap 6/6,
+  external 9/9, socket 5/5, reconnect 2/2. Self-test ALL PASS.
+- taptest: needs a paired iPhone on the LAN — environmental, NOT TESTED
+  here (same as 0.4.0).
+- Snapshot harness: 14 states rendered offscreen (media/timer/remote/
+  external/flash/HUD/overture×2/expanded×2/idle...), housing band clean.
+- Live app: CPU 0.4% idle-with-activity; hover-expand, HUD, outside-click
+  collapse exercised on screen.
+
+### Incidents (this phase)
+
+- Probe overlap initially failed: in the new architecture the canvas window
+  must be ordered front at first present() — window lifetime is no longer
+  per-state. Fixed in present(); overlap sovereign again.
+- Edit-tool discipline held (see prior lesson): two str_replace misses were
+  noisy but harmless; verified by build every time.
+- Background-process tool calls unavailable in this phase — long builds
+  run sync; no conclusions drawn from truncated runs.
+
+### Release
+
+- VERSION 0.5.0; README updated (features + install + privacy wording).
+- DMG cut by Scripts/release.sh (universal, ad-hoc signed, dressed layout,
+  checksum + mount verification) — see dist/Notcher-0.5.0.dmg.
+- NOT TESTED: taptest on real iPhone hardware; brightness meter on
+  external displays (no hardware here); notarization (no Developer ID).

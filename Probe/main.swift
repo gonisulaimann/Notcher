@@ -33,7 +33,7 @@ import SwiftUI
 //   MainActor.assumeIsolated + RunLoop.main.run pumps. No Task, no await.
 let probeMode = CommandLine.arguments.count >= 2 ? CommandLine.arguments[1] : ""
 switch probeMode {
-case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "overlap", "external", "socket":
+case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "overlap", "external", "socket", "hittest":
     MainActor.assumeIsolated {
         switch probeMode {
         case "stress": Probe.StressSync.runStress()
@@ -44,6 +44,7 @@ case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "ove
         case "overlap": Probe.StressSync.runOverlap()
         case "external": Probe.StressSync.runExternal()
         case "socket": Probe.StressSync.runSocket()
+        case "hittest": Probe.StressSync.runHitTest()
         default: Probe.StressSync.runNaming()
         }
     }
@@ -67,7 +68,7 @@ case "samplesteady":
     print(Probe.failures == 0 ? "PROBE DONE, ALL PASS" : "PROBE DONE, \(Probe.failures) FAILURE(S)")
     exit(Probe.failures == 0 ? 0 : 1)
 default:
-    print("usage: NotcherProbe storm|sendfile|cleanup|shotwatch|samplesteady|taptest|stress|persistence|poweredge|naming|firstrun|godmode|overlap|external|reconnect")
+    print("usage: NotcherProbe storm|sendfile|cleanup|shotwatch|samplesteady|taptest|stress|persistence|poweredge|naming|firstrun|godmode|overlap|external|socket|hittest|reconnect")
     exit(2)
 }
 
@@ -237,8 +238,9 @@ struct Probe {
     // MARK: - samplesteady: is the live window still when it should be?
 
     static func samplesteady(pid: Int32, seconds: Double) {
-        // Known island sizes (must match IslandController).
-        let known: [(CGFloat, CGFloat)] = [(251, 38), (348, 40), (404, 468)]
+        // Known island windows: the FIXED canvas + the expanded-only scrim
+        // (morphs happen inside the canvas; neither window ever resizes).
+        let known: [(CGFloat, CGFloat)] = [(440, 594), (620, 620)]
         func knownSize(_ w: CGFloat, _ h: CGFloat) -> Bool {
             known.contains { abs($0.0 - w) <= 2 && abs($0.1 - h) <= 2 }
         }
@@ -259,6 +261,8 @@ struct Probe {
         }
         var sizes: [String] = []
         var unknown = 0
+        var contentHeights: [CGFloat] = []
+        var contentSamples = 0
         let interval = 1.0 / 60.0
         let end = Date().addingTimeInterval(seconds)
         // Settle grace: ignore the first second (an animation may be mid-flight).
@@ -273,6 +277,14 @@ struct Probe {
                     print("off-size frame: \(f)")
                 }
             }
+            // Content-extent stability (every ~0.5 s): the shape must not
+            // breathe when idle. Captures are ~10 ms; cadence absorbs them.
+            contentSamples += 1
+            if contentSamples % 30 == 0, Date() > graceEnd,
+               let c = canvasContent(pid: pid)
+            {
+                contentHeights.append(c.height)
+            }
             Thread.sleep(forTimeInterval: max(0, interval - Date().timeIntervalSince(t0)))
         }
         var hist: [String: Int] = [:]
@@ -280,6 +292,21 @@ struct Probe {
         print("samples=\(sizes.count) histogram=\(hist.sorted { $0.value > $1.value })")
         check(!sizes.isEmpty, "samplesteady saw the window")
         check(unknown == 0, "samplesteady steady-state frames all known (\(unknown) off-size)")
+        if contentHeights.count >= 2 {
+            let spread = (contentHeights.max() ?? 0) - (contentHeights.min() ?? 0)
+            print("content heights: \(contentHeights.map { Int($0) }) spread=\(String(format: "%.1f", spread))pt")
+            // A present user (parked cursor) legitimately expands/collapses
+            // the island; what must NOT happen is oscillation. Count cluster
+            // transitions (compact <200pt vs expanded >400pt) instead.
+            var transitions = 0
+            var wasExpanded: Bool?
+            for h in contentHeights {
+                let expanded = h > 400
+                if let prev = wasExpanded, prev != expanded { transitions += 1 }
+                wasExpanded = expanded
+            }
+            check(transitions <= 6, "samplesteady no content oscillation (\(transitions) transitions)")
+        }
     }
 
     // MARK: - App-support backup (stress/persistence must not eat user state)
@@ -379,26 +406,30 @@ struct Probe {
         let center = ExternalCenter()
             link.attach(timer: timer, harbor: harbor, island: island)
 
+            let clipboard = ClipboardEngine()
+            let hudEngine = HudEngine()
+            let privacy = PrivacyWatch()
             let root = IslandRootView(island: island, timer: timer, media: media, power: power,
                                       harbor: harbor, link: link, center: center,
-                                      notchWidth: 179, hasNotch: true, onDropFiles: { _ in })
-            let hosting = NSHostingView(rootView: root)
-            let ctl = IslandController(content: hosting)
+                                      clipboard: clipboard, hudEngine: hudEngine,
+                                      privacy: privacy,
+                                      layout: NotchGeometry.layout(for: NSScreen.main!),
+                                      onDropFiles: { _ in })
+            let ctl = IslandController()
+            ctl.setRoot(root)
             // Mirror of the app's refreshWindow wiring (minus coalescing —
-            // here every publication hits show() directly, which is exactly
-            // what the diff guard must absorb).
+            // here every publication hits present() directly; the morph
+            // itself lives in SwiftUI inside the fixed canvas window).
             var bag = Set<AnyCancellable>()
-            func showForMode() {
-                switch island.mode {
-                case .idle: ctl.show(.idle, allowKey: false, animate: true)
-                case .compact: ctl.show(.compact, allowKey: false, animate: true)
-                case .expanded: ctl.show(.expanded, allowKey: true, animate: true)
-                }
+            func presentForMode() {
+                ctl.present(metrics: island.surfaceMetrics(layout: ctl.notchLayout),
+                            expanded: island.mode == .expanded,
+                            allowKey: island.mode == .expanded)
             }
-            island.$mode.sink { _ in showForMode() }.store(in: &bag)
-            island.$activity.sink { _ in showForMode() }.store(in: &bag)
-            island.$flash.sink { _ in showForMode() }.store(in: &bag)
-            ctl.show(.idle, allowKey: false, animate: false)
+            island.$mode.sink { _ in presentForMode() }.store(in: &bag)
+            island.$activity.sink { _ in presentForMode() }.store(in: &bag)
+            island.$flash.sink { _ in presentForMode() }.store(in: &bag)
+            presentForMode()
             print("stress: controller ok")
             _ = bag
 
@@ -501,12 +532,10 @@ struct Probe {
                 let f = ctl.panel.frame
                 if !f.equalTo(last) { changes += 1; last = f }
             }
-            print("showCalls=\(ctl.showCalls) showNoops=\(ctl.showNoops) tailFrameChanges=\(changes)")
-            // Every kind-changing morph must still show; the guard's job is
-            // absorbing the redundant same-frame shows (roughly half here,
-            // since this harness bypasses the app's coalescing on purpose).
-            check(ctl.showNoops >= ctl.showCalls / 2, "stress diff guard absorbs churn")
-            check(changes <= 3, "stress steady tail frames stable (\(changes) changes)")
+            print("presentCalls=\(ctl.presentCalls) tailFrameChanges=\(changes)")
+            // v2: the window frame is FIXED (morphs happen inside SwiftUI),
+            // so the steady tail must be literally zero-change.
+            check(changes == 0, "stress steady tail frames stable (\(changes) changes)")
         }
 
         /// Regression for the accumulated-suffix defect: repeated collisions
@@ -521,6 +550,36 @@ struct Probe {
                   "naming counts from stem, never accumulates")
             check(name("note", taken: ["note"]) == "note 2", "naming extensionless")
             check(name("a.b.txt", taken: ["a.b.txt"]) == "a.b 2.txt", "naming multi-dot stem")
+        }
+
+        /// Shaped hit-testing table: the hit container's contract, asserted
+        /// against the same path the renderer draws (top-left origin).
+        static func runHitTest() {
+            let size = IslandMetrics.canvasSize // 440 x 594
+            // Mirrors compactSlab on this Mac's notch: chin covers housing,
+            // body blooms below.
+            let slab = IslandMetrics(width: 344, chinH: 32, chinW: 203,
+                                     shoulder: 20, bodyH: 48, corner: 24)
+            let bodyMid = CGPoint(x: 220, y: 32 + 20 + 24)
+            check(IslandMetrics.hitTest(bodyMid, in: size, m: slab), "hittest body center hits")
+            check(IslandMetrics.hitTest(CGPoint(x: 220, y: 16), in: size, m: slab),
+                  "hittest chin covers housing")
+            check(!IslandMetrics.hitTest(CGPoint(x: 10, y: 500), in: size, m: slab),
+                  "hittest far corner misses")
+            check(!IslandMetrics.hitTest(CGPoint(x: 20, y: 40), in: size, m: slab),
+                  "hittest beside chin misses")
+            // Body right edge: dx=(440-344)/2=48, right=392, mid-body y=76.
+            check(!IslandMetrics.hitTest(CGPoint(x: 395, y: 76), in: size, m: slab),
+                  "hittest 3pt outside misses without slop")
+            check(IslandMetrics.hitTest(CGPoint(x: 395, y: 76), in: size, m: slab, slop: 6),
+                  "hittest slop catches boundary")
+            // Idle melt: almost nothing hits.
+            let idle = IslandMetrics(width: 251, chinH: 32, chinW: 251,
+                                     shoulder: 0, bodyH: 8, corner: 8)
+            check(!IslandMetrics.hitTest(CGPoint(x: 220, y: 300), in: size, m: idle),
+                  "hittest idle ignores deep canvas")
+            check(IslandMetrics.hitTest(CGPoint(x: 220, y: 16), in: size, m: idle),
+                  "hittest idle chin still catches notch taps")
         }
 
         /// First-run decision matrix: translocated always guides (even repeat launches), normal first launch plays the overture once, afterwards silence.
@@ -539,21 +598,15 @@ struct Probe {
                   "firstrun translocation path detected")
         }
 
-        /// Godmode overture: deterministic beats, exact frames, cancel path,
-        /// reduce-motion variant, and a live timed run to completion.
+        /// Godmode overture: beat machine (counts, order, durations),
+        /// manual walk, cancel path, reduce-motion variant, live timed run.
         static func runGodmode() {
-            let corner = CGRect(x: 1246, y: 40, width: 200, height: 40)
-            let notch = CGRect(x: 561, y: 918, width: 348, height: 40)
-            // 1. Structure: beats, frames, schedule cohere.
-            let ov = Overture(corner: corner, notchFrame: notch, reduceMotion: false)
-            check(ov.count == 9, "godmode full beat count (\(ov.count))")
-            check(ov.frame(at: 0) == corner && ov.frame(at: ov.count - 1) == notch,
-                  "godmode arc endpoints exact")
-            check(Overture.easeOutCubic(0) == 0 && Overture.easeOutCubic(1) == 1,
-                  "godmode easing endpoints")
-            let mid = Overture.lerp(corner, notch, t: 0.5)
-            check(mid == CGRect(x: 903.5, y: 479, width: 274, height: 40),
-                  "godmode lerp midpoint exact")
+            // 1. Structure: beats and durations cohere.
+            let ov = Overture(reduceMotion: false)
+            check(ov.count == 6, "godmode full beat count (\(ov.count))")
+            check(ov.beats.first == .melt && ov.beats.last == .recede,
+                  "godmode opens with melt, closes with recede")
+            check(ov.durations.count == ov.count, "godmode every beat has a duration")
             // 2. Manual advance visits every beat in order, then finishes.
             var seen: [Overture.Beat] = []
             var guard_ = 0
@@ -564,23 +617,23 @@ struct Probe {
             check(ov.finished && seen.count == ov.count - 1 && !ov.advance(),
                   "godmode manual walk completes (\(seen.count) steps)")
             // 3. Cancel path fires onDone exactly once and finishes.
-            let ov2 = Overture(corner: corner, notchFrame: notch, reduceMotion: false)
+            let ov2 = Overture(reduceMotion: false)
             var doneCount = 0
             ov2.onDone = { doneCount += 1 }
             _ = ov2.advance(); _ = ov2.advance()
             ov2.cancel()
             ov2.cancel()
             check(ov2.finished && doneCount == 1, "godmode cancel finishes once")
-            // 4. Reduce-motion variant: short, static, same endpoints.
-            let ovr = Overture(corner: corner, notchFrame: notch, reduceMotion: true)
-            check(ovr.count == 3 && ovr.frame(at: 0) == corner && ovr.frame(at: 2) == notch,
+            // 4. Reduce-motion variant: melt → greet → recede.
+            let ovr = Overture(reduceMotion: true)
+            check(ovr.count == 3 && ovr.beats.first == .melt && ovr.beats.last == .recede,
                   "godmode reduced variant coherent")
-            // 5. Live timed run: real timers to completion (~4 s).
-            let ov3 = Overture(corner: corner, notchFrame: notch, reduceMotion: false)
+            // 5. Live timed run: real timers to completion (~5 s).
+            let ov3 = Overture(reduceMotion: false)
             var liveDone = false
             ov3.onDone = { liveDone = true }
             ov3.start()
-            RunLoop.main.run(until: Date().addingTimeInterval(4.5))
+            RunLoop.main.run(until: Date().addingTimeInterval(5.5))
             check(liveDone && ov3.finished, "godmode live run completes on schedule")
         }
 
@@ -601,11 +654,22 @@ struct Probe {
             let link = LinkHost()
             link.attach(timer: timer, harbor: harbor, island: island)
             let center = ExternalCenter()
+            let clipboard = ClipboardEngine()
+            let hudEngine = HudEngine()
+            let privacy = PrivacyWatch()
             let root = IslandRootView(island: island, timer: timer, media: media, power: power,
                                       harbor: harbor, link: link, center: center,
-                                      notchWidth: 179, hasNotch: true, onDropFiles: { _ in })
-            let hosting = NSHostingView(rootView: root)
-            let ctl = IslandController(content: hosting)
+                                      clipboard: clipboard, hudEngine: hudEngine,
+                                      privacy: privacy,
+                                      layout: NotchGeometry.layout(for: NSScreen.main!),
+                                      onDropFiles: { _ in })
+            let ctl = IslandController()
+            ctl.setRoot(root)
+            func presentMode(_ m: IslandState.Mode) {
+                island.mode = m
+                ctl.present(metrics: island.surfaceMetrics(layout: ctl.notchLayout),
+                            expanded: m == .expanded, allowKey: m == .expanded)
+            }
 
             func crowder(level: Int) -> NSWindow {
                 let w = NSWindow(contentRect: NSRect(x: 585, y: 876, width: 300, height: 60),
@@ -644,11 +708,11 @@ struct Probe {
 
             let islandID = CGWindowID(ctl.panel.windowNumber)
             // 1. Scrim lifecycle follows expanded mode.
-            ctl.show(.idle, allowKey: false, animate: false)
+            presentMode(.idle)
             check(!ctl.isScrimVisible, "overlap scrim hidden at idle")
-            ctl.show(.expanded, allowKey: true, animate: false)
+            presentMode(.expanded)
             check(ctl.isScrimVisible, "overlap scrim shows with tray")
-            ctl.show(.compact, allowKey: false, animate: false)
+            presentMode(.compact)
             check(!ctl.isScrimVisible, "overlap scrim hides on collapse")
             // 2. Level audit: island reports 26.
             RunLoop.main.run(until: Date().addingTimeInterval(0.5))
@@ -881,51 +945,121 @@ struct Probe {
         print("taptest AX trusted=\(AXIsProcessTrusted())")
         guard let t = await pairedTransport() else { check(false, "taptest paired"); return }
         defer { t.stop() }
-        guard let pid = runningAppPID() else { check(false, "taptest found app"); return }
+        guard let pid = notchAppPID() else { check(false, "taptest found app"); return }
 
         var flash = LinkMessage(kind: .textPush, deviceName: "Probe", deviceID: "probe")
         flash.text = "Notcher probe tap"
         t.broadcast(flash)
         try? await Task.sleep(for: .seconds(1))
 
-        postClick(at: CGPoint(x: 735, y: 20)) // island pill, screen coords
+        // Click the vertical middle of the live content (data-driven: works
+        // for wings and slab alike, no hardcoded pill geometry).
+        guard var before = canvasContent(pid: pid) else {
+            check(false, "taptest photographed island"); return
+        }
+        if before.height > 300 {
+            // Already expanded (e.g. a parked cursor is hovering it):
+            // normalize via Escape first so the click tests a real transition.
+            postEscape(to: pid)
+            try? await Task.sleep(for: .seconds(1))
+            guard let reset = canvasContent(pid: pid) else {
+                check(false, "taptest re-photographed island"); return
+            }
+            before = reset
+        }
+        let midY = before.top + (before.bottom - before.top) / 2
+        postClick(at: CGPoint(x: before.midX, y: midY))
         try? await Task.sleep(for: .seconds(1))
-        let expanded = islandSize(pid: pid)
-        check(expanded == "404x468", "taptest click expands island (got \(expanded ?? "none"))")
+        guard let expanded = canvasContent(pid: pid) else {
+            check(false, "taptest re-photographed island"); return
+        }
+        check(expanded.height - before.height > 200,
+              "taptest click expands island (content \(before.height)pt -> \(expanded.height)pt)")
 
         postEscape(to: pid)
         try? await Task.sleep(for: .seconds(1))
-        let collapsed = islandSize(pid: pid)
-        let ok = collapsed == "348x40" || collapsed == "251x38"
-        check(ok, "taptest escape collapses island (got \(collapsed ?? "none"))")
+        guard let collapsed = canvasContent(pid: pid) else {
+            check(false, "taptest photographed collapse"); return
+        }
+        check(abs(collapsed.height - before.height) < 40,
+              "taptest escape collapses island (content \(collapsed.height)pt)")
     }
 
-    static func runningAppPID() -> Int32? {
+    /// The island's canvas window, found by owner name (geometry no longer
+    /// encodes state under the single-canvas architecture).
+    static func notchAppPID() -> Int32? {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]
         for w in list ?? [] {
-            if let pid = w[kCGWindowOwnerPID as String] as? Int32,
+            if (w[kCGWindowOwnerName as String] as? String) == "Notcher",
                let b = w[kCGWindowBounds as String] as? [String: CGFloat],
-               (b["Width"] ?? 0) >= 200, (b["Height"] ?? 0) <= 40,
-               pid != getpid()
+               abs((b["Width"] ?? 0) - 440) < 3
             {
-                return pid
+                return w[kCGWindowOwnerPID as String] as? Int32
             }
         }
         return nil
     }
 
-    static func islandSize(pid: Int32) -> String? {
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]
-        var best: CGRect?
-        for w in list ?? [] {
+    struct CanvasContent {
+        var midX: CGFloat
+        var top: CGFloat
+        var bottom: CGFloat
+        var height: CGFloat { bottom - top }
+    }
+
+    /// Photograph the live canvas and return the vertical span containing
+    /// non-transparent content, in screen points. Nil when capture fails.
+    static func canvasContent(pid: Int32) -> CanvasContent? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+            as? [[String: Any]]
+        else { return nil }
+        var target: CGWindowID?
+        var frame = CGRect.zero
+        for w in list {
             guard (w[kCGWindowOwnerPID as String] as? Int32) == pid else { continue }
             guard let b = w[kCGWindowBounds as String] as? [String: CGFloat],
-                  let bw = b["Width"], let bh = b["Height"], bw >= 200
+                  let bw = b["Width"], abs(bw - 440) < 3,
+                  let id = w[kCGWindowNumber as String] as? Int
             else { continue }
-            best = CGRect(x: b["X"] ?? 0, y: b["Y"] ?? 0, width: bw, height: bh)
+            target = CGWindowID(id)
+            frame = CGRect(x: b["X"] ?? 0, y: b["Y"] ?? 0, width: bw, height: b["Height"] ?? 0)
+            break
         }
-        guard let f = best else { return nil }
-        return "\(Int(f.width.rounded()))x\(Int(f.height.rounded()))"
+        guard let id = target,
+              let img = CGWindowListCreateImage(CGRect.null, .optionIncludingWindow, id, [.boundsIgnoreFraming]),
+              let provider = img.dataProvider,
+              let cfdata = provider.data,
+              let bytes = CFDataGetBytePtr(cfdata)
+        else { return nil }
+        let wpx = img.width, hpx = img.height
+        let bpr = img.bytesPerRow
+        let bpp = img.bitsPerPixel / 8
+        guard bpp >= 3 else { return nil }
+        // Alpha channel location from the image's alpha info.
+        let alpha = img.alphaInfo
+        let alphaFirst = alpha == .premultipliedFirst || alpha == .first
+        let hasAlpha = alpha != .none && alpha != .noneSkipFirst && alpha != .noneSkipLast
+        guard hasAlpha else { return nil }
+        let aOff = alphaFirst ? 0 : bpp - 1
+        var top: Int?, bottom: Int?
+        for y in 0 ..< hpx {
+            var rowMax = 0
+            var x = 0
+            while x < wpx {
+                let a = Int(bytes[y * bpr + x * bpp + aOff])
+                if a > rowMax { rowMax = a }
+                x += 2 // 2px stride: plenty for extent detection
+            }
+            if rowMax > 12 {
+                if top == nil { top = y }
+                bottom = y
+            }
+        }
+        guard let t = top, let btm = bottom else { return nil }
+        let scale = CGFloat(wpx) / frame.width
+        return CanvasContent(midX: frame.midX,
+                             top: frame.minY + CGFloat(t) / scale,
+                             bottom: frame.minY + CGFloat(btm) / scale)
     }
 
     static func postClick(at point: CGPoint) {

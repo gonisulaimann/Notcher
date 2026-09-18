@@ -9,8 +9,25 @@ import SwiftUI
 public final class IslandState: ObservableObject {
     public enum Mode: Equatable, Sendable {
         case idle      // thin glow hugging the notch; covers dead space only
-        case compact   // one live activity pill
+        case compact   // one live activity pill (wings or slab, per activity)
         case expanded  // full tray
+        case hud       // volume / brightness capsule (auto-recedes)
+    }
+
+    /// A transient HUD surface: a small capsule under the housing with one
+    /// meter. Value updates IN PLACE (Apple-HUD behavior) — the shape does
+    /// not re-morph on each key press, only the bar moves.
+    public struct HudContent: Equatable {
+        public enum Kind: Equatable, Sendable {
+            case volume(muted: Bool)
+            case brightness
+        }
+        public var kind: Kind
+        public var value: Double // 0...1
+        public init(kind: Kind, value: Double) {
+            self.kind = kind
+            self.value = min(1, max(0, value))
+        }
     }
 
     public enum Activity: Equatable, Sendable {
@@ -34,7 +51,10 @@ public final class IslandState: ObservableObject {
     @Published public var mode: Mode = .idle
     @Published public var activity: Activity = .none
     @Published public var flash: Flash?
+    @Published public var hud: HudContent?
     @Published public var pinned = false
+    /// While the first-run overture is live, this drives the surface beats.
+    @Published public var overtureBeat: Overture.Beat?
     @Published public var loginEnabled = false
     /// True while a real file drag hovers the island (drives drop glow).
     @Published public var dropTarget = false
@@ -44,21 +64,49 @@ public final class IslandState: ObservableObject {
     private var flashWork: DispatchWorkItem?
     private var hoverWork: DispatchWorkItem?
     private var hoverExitWork: DispatchWorkItem?
+    private var hudWork: DispatchWorkItem?
+    private var hudResume: Mode = .idle
     public let reduceMotion: Bool
 
-    /// The island's one animation curve. The spring is tuned for visible
-    /// liquid deformation (damping ~0.7: one tasteful overshoot, no wobble);
+    /// The island's one animation curve — a mass-spring-damper (SwiftUI's
+    /// spring is a solved damped harmonic oscillator; response ≈ ω, damping
+    /// fraction ≈ ζ). ζ 0.85: critically-damped-plus, one breath of
+    /// overshoot, zero wobble; fully interruptible (retargeting mid-flight
+    /// continues from current velocity — the definition of fluid).
     /// Reduced Motion keeps a short ease — motion still exists, no bounce.
     public var motionAnimation: Animation {
         reduceMotion ? Animation.easeOut(duration: 0.12)
-                     : Animation.spring(response: 0.5, dampingFraction: 0.7)
+                     : Animation.spring(response: 0.45, dampingFraction: 0.85)
     }
 
     /// Content morph curve: crossfade + settle, slightly quicker than the
     /// container morph so text lands as the glass arrives.
     public var contentAnimation: Animation {
         reduceMotion ? Animation.easeOut(duration: 0.1)
-                     : Animation.spring(response: 0.38, dampingFraction: 0.85)
+                     : Animation.spring(response: 0.32, dampingFraction: 0.88)
+    }
+
+    /// HUD meter curve: fast tracking, no bounce (Apple-HUD feel).
+    public var hudAnimation: Animation {
+        reduceMotion ? Animation.easeOut(duration: 0.08)
+                     : Animation.spring(response: 0.24, dampingFraction: 1.0)
+    }
+
+    /// The metrics preset for the CURRENT island state. Single source of
+    /// truth for both the view (rendering) and the coordinator (shaped
+    /// hit-testing) — one pure function, two consumers. The overture
+    /// overrides everything while it plays.
+    public func surfaceMetrics(layout: NotchGeometry.Layout) -> IslandMetrics {
+        if let beat = overtureBeat {
+            return IslandMetrics.overture(beat, layout: layout)
+        }
+        let surface: IslandMetrics.Surface = switch mode {
+        case .idle: .idle
+        case .compact: .compact
+        case .expanded: .expanded
+        case .hud: .hud
+        }
+        return IslandMetrics.metrics(for: surface, layout: layout, activity: activity)
     }
 
     public init() {
@@ -94,7 +142,7 @@ public final class IslandState: ObservableObject {
         flashWork?.cancel()
         flash = Flash(icon: icon, text: text)
         IslandDebug.log("flash '\(text)'")
-        if mode == .idle { setMode(.compact, why: "flash") }
+        if mode == .idle || mode == .hud { setMode(.compact, why: "flash") }
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -179,6 +227,39 @@ public final class IslandState: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - HUD surface (volume / brightness)
+
+    /// Show or UPDATE the HUD capsule. Repeated key presses update the value
+    /// in place and extend the lifetime — one morph in, N value updates, one
+    /// morph out. Never steals focus; ignored while the tray is open.
+    public func showHud(_ content: HudContent) {
+        guard mode != .expanded else { return }
+        hudWork?.cancel()
+        if mode != .hud {
+            hudResume = mode == .hud ? hudResume : mode
+            setMode(.hud, why: "hud")
+        }
+        hud = content
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self, self.mode == .hud else { return }
+                self.hud = nil
+                // A flash that arrived mid-HUD takes precedence on exit.
+                if self.flash != nil {
+                    self.setMode(.compact, why: "hud flash")
+                } else if self.hudResume == .expanded {
+                    self.setMode(.idle, why: "hud receded")
+                } else {
+                    // collapse() picks idle when nothing is alive, compact
+                    // otherwise — never leaves an empty pill parked.
+                    self.collapse()
+                }
+            }
+        }
+        hudWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1, execute: work)
     }
 
     public func refreshLogin() {

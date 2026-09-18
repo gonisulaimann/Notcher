@@ -22,6 +22,9 @@ struct Snap {
         let harbor = HarborStore()
         let link = LinkHost()
         let center = ExternalCenter()
+        let clipboard = ClipboardEngine()
+        let hudEngine = HudEngine()
+        let privacy = PrivacyWatch()
         link.attach(timer: timer, harbor: harbor, island: island)
 
         // Deterministic timer content: start, then freeze.
@@ -47,7 +50,7 @@ struct Snap {
         let layout = NotchGeometry.layout(for: screen)
         print("notch: hasNotch=\(layout.hasNotch) width=\(layout.notchWidth) top=\(layout.topInset)")
 
-        let win = NSWindow(contentRect: NSMakeRect(0, 0, 404, 468),
+        let win = NSWindow(contentRect: NSRect(origin: .zero, size: IslandMetrics.canvasSize),
                            styleMask: .borderless, backing: .buffered, defer: false)
         win.isOpaque = false
         win.backgroundColor = .clear
@@ -57,24 +60,27 @@ struct Snap {
         func root() -> IslandRootView {
             IslandRootView(island: island, timer: timer, media: media, power: power,
                            harbor: harbor, link: link, center: center,
-                           notchWidth: layout.notchWidth, hasNotch: layout.hasNotch,
-                           onDropFiles: { _ in })
+                           clipboard: clipboard, hudEngine: hudEngine, privacy: privacy,
+                           layout: layout,
+                           onDropFiles: { _ in },
+                           onInteract: {})
         }
 
-        func place(_ size: NSSize) {
+        func place() {
             let f = screen.frame
+            let size = IslandMetrics.canvasSize
             // Bottom-right corner: out of the way, fully on-screen.
             win.setFrame(NSRect(x: f.maxX - size.width - 24, y: f.minY + 40,
                                 width: size.width, height: size.height),
                          display: true)
         }
 
-        func shoot(_ size: NSSize, _ name: String, dark: Bool) {
+        func shoot(_ name: String, dark: Bool) {
             win.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             let hosting = NSHostingView(rootView: root())
             hosting.layer?.backgroundColor = NSColor.clear.cgColor
             win.contentView = hosting
-            place(size)
+            place()
             win.orderFrontRegardless()
             RunLoop.main.run(until: Date().addingTimeInterval(0.7))
             let hid = CGWindowID(win.windowNumber)
@@ -89,34 +95,36 @@ struct Snap {
             } else { print("capture failed for \(name)") }
         }
 
-        let idleW = max(180, layout.notchWidth + 72)
-        let idleH = (layout.hasNotch ? layout.topInset : 30) + 6
-
         // 1. idle (nothing live)
         island.mode = .idle; island.activity = .none; island.flash = nil
-        shoot(NSSize(width: idleW, height: idleH), "idle", dark: true)
+        shoot("idle", dark: true)
 
-        // 2. compact, timer live
+        // 2. compact, timer live (wings)
         island.mode = .compact; island.activity = .timer
-        shoot(NSSize(width: 348, height: 40), "compact-timer", dark: true)
+        shoot("compact-timer", dark: true)
 
-        // 3. compact, media live (uses whatever Music/Spotify report now)
+        // 3. compact, media live (slab; uses whatever Music/Spotify report now)
         island.mode = .compact; island.activity = .media
-        shoot(NSSize(width: 348, height: 40), "compact-media", dark: true)
+        shoot("compact-media", dark: true)
 
-        // 3b. remote-timer pill content with stub values (pure view: no live
-        // session needed). Rendered in equivalent pill chrome.
+        // 3b. remote-timer pill content with stub values (pure view,
+        // rendered in equivalent chrome — LinkHost state is private(set)).
         do {
-            let pill = ZStack {
-                RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.black.opacity(0.85))
-                RemoteTimerPillContent(peer: "iPhone", remaining: 754, total: 1500, updatedAt: Date())
-                    .padding(.horizontal, 14)
+            let pill = ZStack(alignment: .top) {
+                Color.black.opacity(0.85)
+                RemoteTimerPillContent(peer: "iPhone", remaining: 754,
+                                       total: 1500, updatedAt: Date())
+                    .padding(.top, layout.hasNotch ? layout.topInset : 0)
             }
-            let hosting = NSHostingView(rootView: AnyView(pill))
+            .frame(width: 259, height: (layout.hasNotch ? layout.topInset : 0) + 34,
+                   alignment: .top)
+            .frame(width: IslandMetrics.canvasSize.width,
+                   height: IslandMetrics.canvasSize.height, alignment: .top)
+            .environment(\.colorScheme, .dark)
+            let hosting = NSHostingView(rootView: pill)
             hosting.layer?.backgroundColor = NSColor.clear.cgColor
             win.contentView = hosting
-            win.appearance = NSAppearance(named: .darkAqua)
-            place(NSSize(width: 348, height: 40))
+            place()
             win.orderFrontRegardless()
             RunLoop.main.run(until: Date().addingTimeInterval(0.7))
             let hid = CGWindowID(win.windowNumber)
@@ -130,79 +138,30 @@ struct Snap {
             }
         }
 
-        // 3c. third-party pill content with stub values (pure view).
-        do {
-            let pill = ZStack {
-                RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.black.opacity(0.85))
-                ExternalPillContent(icon: "hammer.fill", title: "Building API",
-                                    subtitle: "12 targets left", progress: 0.7, source: "Chef")
-                    .padding(.horizontal, 14)
-            }
-            let hosting = NSHostingView(rootView: AnyView(pill))
-            hosting.layer?.backgroundColor = NSColor.clear.cgColor
-            win.contentView = hosting
-            win.appearance = NSAppearance(named: .darkAqua)
-            place(NSSize(width: 348, height: 40))
-            win.orderFrontRegardless()
-            RunLoop.main.run(until: Date().addingTimeInterval(0.7))
-            let hid = CGWindowID(win.windowNumber)
-            if let img = CGWindowListCreateImage(CGRect.null, .optionIncludingWindow, hid, [.boundsIgnoreFraming]) {
-                let rep = NSBitmapImageRep(cgImage: img)
-                rep.size = NSSize(width: img.width, height: img.height)
-                if let png = rep.representation(using: .png, properties: [:]) {
-                    try? png.write(to: URL(fileURLWithPath: "/tmp/notcher-compact-external.png"))
-                    print("wrote /tmp/notcher-compact-external.png \(img.width)x\(img.height)")
-                }
-            }
-        }
+        // 3c. third-party pill with stub values (pure view).
+        island.activity = .external
+        shoot("compact-external", dark: true)
 
-        // 3d. Godmode key beats (deterministic advance, no timers).
-        do {
-            let f = screen.frame
-            let corner = CGRect(x: f.maxX - 224, y: f.minY + 40, width: 200, height: 40)
-            let notch = CGRect(x: f.midX - 174, y: f.maxY - 40 + 2, width: 348, height: 40)
-            let ov = Overture(corner: corner, notchFrame: notch, reduceMotion: false)
-            for _ in 0 ..< 4 { ov.advance() } // greetings beat
-            let hosting = NSHostingView(rootView: AnyView(
-                ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.black.opacity(0.85))
-                    OvertureView(overture: ov)
-                        .padding(.horizontal, 14)
-                }))
-            hosting.layer?.backgroundColor = NSColor.clear.cgColor
-            win.contentView = hosting
-            win.appearance = NSAppearance(named: .darkAqua)
-            place(NSSize(width: 348, height: 40))
-            win.orderFrontRegardless()
-            RunLoop.main.run(until: Date().addingTimeInterval(0.7))
-            let hid = CGWindowID(win.windowNumber)
-            if let img = CGWindowListCreateImage(CGRect.null, .optionIncludingWindow, hid, [.boundsIgnoreFraming]) {
-                let rep = NSBitmapImageRep(cgImage: img)
-                rep.size = NSSize(width: img.width, height: img.height)
-                if let png = rep.representation(using: .png, properties: [:]) {
-                    try? png.write(to: URL(fileURLWithPath: "/tmp/notcher-overture-greet.png"))
-                    print("wrote /tmp/notcher-overture-greet.png \(img.width)x\(img.height)")
-                }
-            }
-            for _ in 0 ..< 2 { ov.advance() } // vocabFile beat
-            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
-            let hid2 = CGWindowID(win.windowNumber)
-            if let img2 = CGWindowListCreateImage(CGRect.null, .optionIncludingWindow, hid2, [.boundsIgnoreFraming]) {
-                let rep2 = NSBitmapImageRep(cgImage: img2)
-                rep2.size = NSSize(width: img2.width, height: img2.height)
-                if let png2 = rep2.representation(using: .png, properties: [:]) {
-                    try? png2.write(to: URL(fileURLWithPath: "/tmp/notcher-overture-timer.png"))
-                    print("wrote /tmp/notcher-overture-timer.png \(img2.width)x\(img2.height)")
-                }
-            }
-        }
+        // 3d. HUD capsule
+        island.mode = .hud
+        island.hud = IslandState.HudContent(kind: .volume(muted: false), value: 0.65)
+        shoot("hud", dark: true)
+
+        // 3e. Godmode key beats (deterministic beat values, no timers).
+        island.hud = nil
+        island.mode = .idle
+        island.overtureBeat = .greetings
+        shoot("overture-greet", dark: true)
+        island.overtureBeat = .vocabTimer
+        shoot("overture-timer", dark: true)
+        island.overtureBeat = nil
 
         // 4. expanded, dark
         island.mode = .expanded
-        shoot(NSSize(width: 404, height: 468), "expanded-dark", dark: true)
+        shoot("expanded-dark", dark: true)
 
         // 5. expanded, light
-        shoot(NSSize(width: 404, height: 468), "expanded-light", dark: false)
+        shoot("expanded-light", dark: false)
 
         win.orderOut(nil)
         print("done")

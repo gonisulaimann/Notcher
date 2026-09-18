@@ -1,43 +1,38 @@
 import Foundation
+import SwiftUI
 
-/// Godmode overture: the one-time first-launch moment (~3.5 s, never loops).
+/// Godmode overture: the one-time first-launch moment (~4.5 s, never loops).
 ///
-/// A glowing pill arcs from the screen corner to the notch, locks in with a
-/// multilingual greeting montage, teaches the 3-beat vocabulary (timer →
-/// file swallow → waveform), then recedes into the idle melt. Skippable on
-/// any click/Escape; Reduce Motion collapses it to a short fade.
+/// v2 design: the island surface itself tells the story, in ONE continuous
+/// spring morph inside the fixed canvas window —
+///   melt-in from nothing → greet in 8 languages → teach the three
+///   surfaces (timer wings / file slab / media slab) → recede to idle.
+/// No second window, no cross-screen arc, no window resizing — the same
+/// morph language the user is about to learn is the one that teaches it.
+/// Skippable on any click/Escape; Reduce Motion collapses to a short fade.
 ///
-/// Design constraints honored:
-/// - No separate window layer: the existing island panel is driven frame by
-///   frame through IslandController.showCustom (argued here, not assumed:
-///   a second window would double every ordering/z/archive edge the product
-///   spent two sessions eliminating).
-/// - Deterministic: beats advance through an explicit schedule; `advance()`
-///   steps one beat synchronously so probes assert exact frames/content
-///   without timers.
+/// The beat machine is pure and deterministic (probed without timers);
+/// content beats map to real IslandState surfaces rendered by OvertureView.
 @MainActor
 public final class Overture: ObservableObject {
     public static let greetings = ["hello", "hola", "bonjour", "こんにちは", "ciao", "olá", "hej", "salut"]
 
-    /// Beat kinds in order. Full sequence; reduced motion uses a subset.
     public enum Beat: Equatable, Sendable {
-        case corner
-        case arc(Int)          // 0..<arcSteps
-        case greetings
-        case vocabTimer
-        case vocabFile
-        case vocabWave
-        case recede
+        case melt          // surface grows out of the housing
+        case greetings     // multilingual hello montage
+        case vocabTimer    // timer wings
+        case vocabFile     // harbor slab
+        case vocabMedia    // media slab
+        case recede        // melt back to idle
     }
-
-    public static let arcSteps = 3
 
     @Published public private(set) var beatIndex = 0
     @Published public private(set) var greetingIndex = 0
 
     public let reduceMotion: Bool
     public private(set) var beats: [Beat] = []
-    public private(set) var frames: [CGRect] = []
+    /// Seconds per beat (content switches when the morph has settled).
+    public private(set) var durations: [TimeInterval] = []
     public private(set) var finished = false
 
     public var onDone: (() -> Void)?
@@ -45,39 +40,25 @@ public final class Overture: ObservableObject {
     private var ticker: Timer?
     private var greetTicker: Timer?
     private var startDate = Date()
-
-    /// Schedule: beat index -> seconds after start.
     private var schedule: [TimeInterval] = []
 
-    public init(corner: CGRect, notchFrame: CGRect, reduceMotion: Bool) {
+    public init(reduceMotion: Bool) {
         self.reduceMotion = reduceMotion
         if reduceMotion {
-            beats = [.corner, .greetings, .recede]
-            frames = [corner, notchFrame, notchFrame]
-            schedule = [0, 0.2, 1.2, 1.5]
+            beats = [.melt, .greetings, .recede]
+            durations = [0.2, 0.9, 0.3]
         } else {
-            var b: [Beat] = [.corner]
-            var f: [CGRect] = [corner]
-            for i in 0 ..< Self.arcSteps {
-                b.append(.arc(i))
-                f.append(Self.lerp(corner, notchFrame, t: Self.easeOutCubic(Double(i + 1) / Double(Self.arcSteps + 1))))
-            }
-            b += [.greetings, .vocabTimer, .vocabFile, .vocabWave, .recede]
-            f += [notchFrame, notchFrame, notchFrame, notchFrame, notchFrame]
-            beats = b
-            frames = f
-            // Start times per beat + end time: arc 1.1 s, greetings 1.0 s,
-            // vocab 3 x 0.4 s, recede. Total ~3.65 s.
-            schedule = [0, 0.35, 0.6, 0.85, 1.1, 2.1, 2.5, 2.9, 3.3, 3.65]
+            beats = [.melt, .greetings, .vocabTimer, .vocabFile, .vocabMedia, .recede]
+            durations = [0.7, 1.1, 0.9, 0.9, 0.9, 0.6]
         }
-        assert(schedule.count == beats.count + 1)
+        var acc: TimeInterval = 0
+        for d in durations {
+            acc += d
+            schedule.append(acc)
+        }
     }
 
     public var count: Int { beats.count }
-
-    public func frame(at index: Int) -> CGRect {
-        frames[min(max(index, 0), frames.count - 1)]
-    }
 
     public func start() {
         guard !finished else { return }
@@ -119,10 +100,10 @@ public final class Overture: ObservableObject {
     private func pump() {
         guard !finished else { return }
         let elapsed = Date().timeIntervalSince(startDate)
-        while beatIndex + 1 < beats.count, elapsed >= schedule[beatIndex + 1] {
+        while beatIndex + 1 < beats.count, elapsed >= schedule[beatIndex] {
             beatIndex += 1
         }
-        if elapsed >= schedule[beats.count] {
+        if elapsed >= schedule[beats.count - 1] {
             finish()
         }
     }
@@ -136,15 +117,89 @@ public final class Overture: ObservableObject {
         greetTicker = nil
         onDone?()
     }
+}
 
-    public static func easeOutCubic(_ t: Double) -> Double {
-        1 - pow(1 - t, 3)
+/// The overture surface: the island shape mid-morph with beat content.
+/// Rendered inside the island's own canvas window — same MorphShape, same
+/// springs, so the user's first frame IS the product's design language.
+public struct OvertureView: View {
+    @ObservedObject var overture: Overture
+    var onTap: () -> Void
+
+    public init(overture: Overture, onTap: @escaping () -> Void = {}) {
+        self.overture = overture
+        self.onTap = onTap
     }
 
-    public static func lerp(_ a: CGRect, _ b: CGRect, t: Double) -> CGRect {
-        CGRect(x: a.minX + (b.minX - a.minX) * t,
-               y: a.minY + (b.minY - a.minY) * t,
-               width: a.width + (b.width - a.width) * t,
-               height: a.height + (b.height - a.height) * t)
+    public var body: some View {
+        OvertureBeatContent(beat: overture.beats[overture.beatIndex],
+                            greetingIndex: overture.greetingIndex)
+            .contentShape(Rectangle())
+            .onTapGesture { onTap() }
+            .accessibilityLabel("Welcome to Notcher. Click to skip the introduction.")
+    }
+}
+
+/// Beat content driven by plain values — the live app renders this from
+/// `IslandState.overtureBeat` without holding the Overture object; the
+/// greeting montage ticks itself via TimelineView while that beat shows.
+public struct OvertureBeatContent: View {
+    public var beat: Overture.Beat
+    public var greetingIndex: Int
+
+    public init(beat: Overture.Beat, greetingIndex: Int = 0) {
+        self.beat = beat
+        self.greetingIndex = greetingIndex
+    }
+
+    public var body: some View {
+        Group {
+            switch beat {
+            case .melt, .recede:
+                Color.clear.frame(height: 10)
+            case .greetings:
+                TimelineView(.periodic(from: .now, by: 0.2)) { context in
+                    let idx = Int(context.date.timeIntervalSinceReferenceDate * 5)
+                        % Overture.greetings.count
+                    Text(Overture.greetings[idx])
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .tracking(-0.3)
+                        .id("greet-\(idx)")
+                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                }
+            case .vocabTimer:
+                vocabRow(icon: "timer", tint: IslandPalette.timer,
+                         title: "25:00", subtitle: "your countdown lives here")
+            case .vocabFile:
+                vocabRow(icon: "tray.and.arrow.down.fill", tint: IslandPalette.transfer,
+                         title: "drag anything in", subtitle: "it parks until you flick it out")
+            case .vocabMedia:
+                vocabRow(icon: "waveform", tint: IslandPalette.media,
+                         title: "what's playing", subtitle: "with the art, right at the notch")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: beat)
+    }
+
+    private func vocabRow(icon: String, tint: Color, title: String, subtitle: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .tracking(-0.2)
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+        }
+        .padding(.horizontal, 16)
+        .id("vocab-\(title)")
+        .transition(.opacity.combined(with: .scale(scale: 0.94)))
     }
 }
