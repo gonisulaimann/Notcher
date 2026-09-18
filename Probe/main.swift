@@ -610,6 +610,8 @@ struct Probe {
             let outsidePt = NSPoint(x: 10, y: 100)
             let hitOutside = ctl.panel.contentView?.hitTest(outsidePt)
             check(hitOutside == nil, "hittest outside shape returns nil view")
+            check(ctl.panel.hitTestCheck?(insidePt) == true, "hittest panel check approves inside")
+            check(ctl.panel.hitTestCheck?(outsidePt) == false, "hittest panel check rejects outside")
             ctl.tearDown()
         }
 

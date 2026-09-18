@@ -124,6 +124,7 @@ struct SurfaceView: View {
                 )
             }
         }
+        .frame(width: metrics.width, height: metrics.height, alignment: .top)
         .mask(MorphShape(m: metrics))
         .overlay(
             // 6. Subtle inner borders & dynamic desktop-adaptive specular highlights:
@@ -213,6 +214,12 @@ public struct IslandRootView: View {
             surfaceLayer
             contentLayer
         }
+        .frame(width: metrics.width, height: metrics.height, alignment: .top)
+        .contentShape(MorphShape(m: metrics))
+        .onHover { hovering in
+            island.pointerInside = hovering
+            if hovering { island.hoverEntered() } else { island.hoverExited() }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(island.contentAnimation, value: island.mode)
         .animation(island.contentAnimation, value: island.activity)
@@ -220,10 +227,6 @@ public struct IslandRootView: View {
         .animation(island.hudAnimation, value: island.hud)
         .environment(\.colorScheme, .dark)
         .background(DropCatcher(onDrop: onDropFiles, onHighlight: { island.setDropTarget($0) }))
-        .onHover { hovering in
-            island.pointerInside = hovering
-            if hovering { island.hoverEntered() } else { island.hoverExited() }
-        }
     }
 
     private var surfaceLayer: some View {
@@ -237,6 +240,7 @@ public struct IslandRootView: View {
                     pointerInside: island.pointerInside,
                     isCharging: power.charging,
                     isLowBattery: (power.percent ?? 100) < 20 && !power.charging)
+            .frame(width: metrics.width, height: metrics.height, alignment: .top)
             .animation(island.motionAnimation, value: metrics)
     }
 

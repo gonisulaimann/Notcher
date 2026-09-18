@@ -939,3 +939,32 @@ A comprehensive architectural and design overhaul transforming Notcher into a bu
 - `LinkSelfTest`: 8/8 PASS
 - `IslandSnapshot`: 12/12 verified high-fidelity offscreen snapshot renders.
 
+## Phase 14: 0.7.3 — AppKit Window Event Gating & Precision Bounded Morph Hover
+
+### Architectural Overhaul Highlights
+1. **Low-Level Window Server Event Gating (`NotchWindowPanel.sendEvent`)**:
+   - Added `hitTestCheck: ((NSPoint) -> Bool)?` to `NotchWindowPanel` (subclass of `NSPanel`).
+   - Overrode `sendEvent(_ event: NSEvent)` to discard `.mouseMoved`, `.leftMouseDown`, `.rightMouseDown`, and other mouse clicks at the window panel boundary when the cursor is outside the hardware-fused morph shape.
+   - Preserves seamless boundary exit transitions: if the cursor moves from inside to outside, the exit event is passed once to AppKit to dispatch `mouseExited` and clear hover states before subsequent outer moves are suppressed.
+   - Completely eliminates arbitrary cursor activations, errant wakeups, and unwanted hover tracking.
+
+2. **Precision Bounded Morph Hover & Liquid Glass Framing**:
+   - Replaced root-level infinite-frame hover tracking in SwiftUI with capsule-bounded tracking: `.frame(width: metrics.width, height: metrics.height, alignment: .top).contentShape(MorphShape(m: metrics)).onHover { ... }`.
+   - Explicitly framed `SurfaceView` and `surfaceLayer` to `(metrics.width, metrics.height)` so that the black top housing band (`#000000`, 0.0 to 0.16), `#14141a` to `#08080a` glass gradients, 12% white inner specular border, and dual ambient drop shadows map directly to the visible capsule geometry.
+
+3. **Verification Matrix (100% Green)**:
+   - `NotcherProbe hittest`: 13/13 PASS (added panel hardware event checks)
+   - `NotcherProbe stress`: 10/10 PASS (337 presentCalls, 0 steady tail frame changes)
+   - `NotcherProbe godmode`: 6/6 PASS
+   - `NotcherProbe overlap`: 6/6 PASS
+   - `NotcherProbe external`: 9/9 PASS
+   - `NotcherProbe persistence`: 4/4 PASS
+   - `NotcherProbe poweredge`: 4/4 PASS
+   - `NotcherProbe naming`: 5/5 PASS
+   - `NotcherProbe firstrun`: 6/6 PASS
+   - `NotcherProbe socket`: 5/5 PASS
+   - `NotcherProbe sensors`: 12/12 PASS
+   - `LinkSelfTest`: 8/8 PASS
+   - `IslandSnapshot`: 12/12 verified high-fidelity offscreen snapshot renders.
+
+

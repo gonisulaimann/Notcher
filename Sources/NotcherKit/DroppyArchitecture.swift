@@ -139,8 +139,6 @@ public struct DroppyLiquidGlass: ViewModifier {
                 )
             )
             .clipShape(MorphShape(m: metrics))
-            .shadow(color: Color.black.opacity(0.28), radius: 4, x: 0, y: 2)
-            .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 10)
     }
 }
 

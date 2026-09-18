@@ -9,8 +9,32 @@ import SwiftUI
 /// Configured with .nonactivatingPanel, .fullScreenAuxiliary, and .status level.
 public class NotchWindowPanel: NSPanel {
     public var allowKey = false
+    public var hitTestCheck: ((NSPoint) -> Bool)?
+    private var lastInside = false
+
     override public var canBecomeKey: Bool { allowKey }
     override public var canBecomeMain: Bool { false }
+
+    override public func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            if let check = hitTestCheck, !check(event.locationInWindow) {
+                return
+            }
+        case .mouseMoved:
+            if let check = hitTestCheck {
+                let inside = check(event.locationInWindow)
+                if !inside && !lastInside {
+                    // Cursor is outside and was outside: discard event completely
+                    return
+                }
+                lastInside = inside
+            }
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
 }
 
 public typealias IslandPanel = NotchWindowPanel
@@ -115,6 +139,9 @@ public final class IslandController {
         panel.hidesOnDeactivate = false
         panel.isMovable = false
         panel.ignoresMouseEvents = false
+        panel.hitTestCheck = { [weak self] pt in
+            self?.shapeContains(windowPoint: pt, slop: 0) ?? false
+        }
         placeCanvas()
 
         NotificationCenter.default.addObserver(
