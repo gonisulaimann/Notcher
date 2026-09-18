@@ -153,6 +153,28 @@ public final class LinkPeer: ObservableObject {
         transport?.broadcast(m)
     }
 
+    public func sendLiveActivity(id: String, type: String, title: String, subtitle: String? = nil,
+                                 progress: Double? = nil, icon: String = "app.badge",
+                                 leadingText: String? = nil, trailingText: String? = nil) {
+        var m = LinkMessage(kind: .liveActivityUpdate, deviceName: deviceName, deviceID: deviceID)
+        m.activityID = id
+        m.activityType = type
+        m.activityTitle = title
+        m.activitySubtitle = subtitle
+        m.activityProgress = progress
+        m.activityIcon = icon
+        m.activityLeadingText = leadingText
+        m.activityTrailingText = trailingText
+        m.activityTimestamp = Date().timeIntervalSince1970
+        transport?.broadcast(m)
+    }
+
+    public func endLiveActivity(id: String) {
+        var m = LinkMessage(kind: .liveActivityEnd, deviceName: deviceName, deviceID: deviceID)
+        m.activityID = id
+        transport?.broadcast(m)
+    }
+
     // MARK: - Incoming
 
     private func tick() {

@@ -125,6 +125,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.island.showFlash(icon: "arrow.down.doc.fill", text: "\(name) from \(peer)")
             case .timerStartedRemotely(let peer):
                 self.island.showFlash(icon: "timer", text: "Timer from \(peer)")
+            case .liveActivityReceived(let peer, let title):
+                self.island.showFlash(icon: "sparkles", text: "\(title) from \(peer)")
             }
             self.engineChanged()
         }
@@ -167,6 +169,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &bag)
         link.$remoteTimer
             .map { $0?.peer }
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.engineChanged() }
+            .store(in: &bag)
+        link.$liveActivity
+            .map { $0?.id }
             .removeDuplicates()
             .sink { [weak self] _ in self?.engineChanged() }
             .store(in: &bag)
@@ -316,9 +323,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func engineChanged() {
         let transferActive = link.receiving != nil
         let remoteTimerActive = !timer.isActive && link.remoteTimer != nil
+        let liveActivityActive = link.liveActivity != nil
         island.resolve(timerActive: timer.isActive || timer.state == .done,
                        transferActive: transferActive,
                        remoteTimerActive: remoteTimerActive,
+                       liveActivityActive: liveActivityActive,
                        mediaPlaying: media.playing,
                        externalActive: center.visible != nil)
         requestRefresh()

@@ -15,22 +15,22 @@ the island melts into the housing. No widgets. No cloud. No noise.
 [![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)](https://github.com/gonisulaimann/Notcher/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-| Timer pill | iPhone mirror |
+| Live Activity Mirror | Charging Surge |
 |---|---|
-| ![Timer pill](docs/images/notcher-compact-timer.png) | ![iPhone timer mirror](docs/images/notcher-compact-remote.png) |
-| *Your countdown, always in view.* | *Your iPhone's timer, ticking in the notch.* |
+| ![Live Activity](docs/images/notcher-compact-live.png) | ![Charging Surge](docs/images/notcher-charging-flash.png) |
+| *iPhone delivery, rides & flights.* | *Dynamic surge animation on plug-in.* |
 
-| Now Playing | Idle blend |
+| Timer pill | Now Playing |
 |---|---|
-| ![Now Playing pill](docs/images/notcher-compact-media.png) | ![Idle notch blend](docs/images/notcher-idle.png) |
-| *What's playing, one glance.* | *Nothing alive: melted into the housing.* |
+| ![Timer pill](docs/images/notcher-compact-timer.png) | ![Now Playing pill](docs/images/notcher-compact-media.png) |
+| *Your countdown, always in view.* | *What's playing, one glance.* |
 
 ## Install
 
 **You need:** macOS 14 or later, and a MacBook with a notch
 (no notch? it falls back to a floating capsule).
 
-1. Download **Notcher-0.6.1.dmg** from
+1. Download **Notcher-0.7.0.dmg** from
    [Releases](https://github.com/gonisulaimann/Notcher/releases).
 2. Open the DMG and drag Notcher into Applications.
 3. The first-launch warning is EXPECTED — the build is ad-hoc signed, and

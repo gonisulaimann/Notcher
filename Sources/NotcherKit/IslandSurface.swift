@@ -88,14 +88,14 @@ public struct IslandMetrics: Equatable, Animatable, Sendable {
                              shoulder: 0, bodyH: 42, corner: 24)
     }
 
-    /// Expanded: an intimate, Apple-grade living surface (not a dashboard).
-    /// Height is ~152pt total, perfectly proportioned under the notch.
+    /// Expanded: a fluid, Apple-grade living surface with utility panels.
+    /// Height is ~220pt bodyH, perfectly proportioned under the notch with zero clipping.
     public static func expanded(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 0
-        let w = min(410, max(380, layout.notchWidth + 210))
+        let w = min(420, max(390, layout.notchWidth + 220))
         return IslandMetrics(width: w,
                              chinH: chin, chinW: w,
-                             shoulder: 0, bodyH: 120,
+                             shoulder: 0, bodyH: 220,
                              corner: 28)
     }
 

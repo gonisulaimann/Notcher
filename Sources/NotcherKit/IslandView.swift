@@ -76,17 +76,19 @@ struct SurfaceView: View {
     var expanded: Bool
     var dropTarget: Bool = false
     var pointerInside: Bool = false
+    var isCharging: Bool = false
+    var isLowBattery: Bool = false
 
     var body: some View {
         ZStack {
-            // 1. Base Apple Vibrancy Glass
+            // 1. Base Apple Vibrancy Glass (.ultraThinMaterial)
             VisualEffect(material: .popover)
 
-            // 2. Pure dark tonal gradient matching the notch glass (OLED-grade black)
+            // 2. Translucent Liquid Glass Dark Gradient (allows wallpaper colors & light to refract through)
             LinearGradient(
                 colors: [
-                    Color(red: 0.05, green: 0.05, blue: 0.06).opacity(0.96),
-                    Color(red: 0.02, green: 0.02, blue: 0.03).opacity(0.98)
+                    Color(red: 0.08, green: 0.08, blue: 0.10).opacity(0.82),
+                    Color(red: 0.03, green: 0.03, blue: 0.04).opacity(0.88)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -95,40 +97,66 @@ struct SurfaceView: View {
             // 3. Drop target ambient illumination wash
             if dropTarget {
                 LinearGradient(
-                    colors: [Color.orange.opacity(0.24), Color.orange.opacity(0.04)],
+                    colors: [Color.orange.opacity(0.26), Color.orange.opacity(0.05)],
                     startPoint: .top,
                     endPoint: .bottom
+                )
+            }
+
+            // 4. Charging surge dynamic energy wash
+            if isCharging {
+                LinearGradient(
+                    colors: [Color.green.opacity(0.18), Color.cyan.opacity(0.08), Color.clear],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+            }
+
+            // 5. Low battery warning subtle breath wash
+            if isLowBattery {
+                LinearGradient(
+                    colors: [Color.red.opacity(0.18), Color.orange.opacity(0.06), Color.clear],
+                    startPoint: .bottom,
+                    endPoint: .top
                 )
             }
         }
         .mask(MorphShape(m: metrics))
         .overlay(
-            // 4. Directional specular rim highlight:
-            // CRITICAL: Top is Color.clear so the surface unites with the camera housing without a dividing line.
-            // Bottom edge has a subtle glass rim catch.
+            // 6. Directional specular rim highlight:
+            // Top is Color.clear so the surface fuses with the camera housing without a dividing seam.
+            // Bottom edge has subtle specular glass catch.
             MorphShape(m: metrics)
                 .stroke(
                     dropTarget
                         ? AnyShapeStyle(Color.orange.opacity(0.90))
-                        : AnyShapeStyle(
-                            LinearGradient(
-                                colors: [
-                                    Color.clear,
-                                    Color.white.opacity(0.04),
-                                    Color.white.opacity(pointerInside ? 0.20 : 0.12)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
+                        : isCharging
+                            ? AnyShapeStyle(
+                                LinearGradient(
+                                    colors: [Color.clear, Color.green.opacity(0.35), Color.green.opacity(0.85)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
                             )
-                        ),
-                    lineWidth: dropTarget ? 1.5 : 0.75
+                            : AnyShapeStyle(
+                                LinearGradient(
+                                    colors: [
+                                        Color.clear,
+                                        Color.white.opacity(0.05),
+                                        Color.white.opacity(pointerInside ? 0.24 : 0.16)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            ),
+                    lineWidth: (dropTarget || isCharging) ? 1.5 : 0.75
                 )
                 .allowsHitTesting(false)
         )
-        // 5. Cohesive ambient grounding shadow beneath the island
-        .shadow(color: .black.opacity(expanded ? 0.38 : 0.25),
-                radius: expanded ? 18 : 10,
-                y: expanded ? 8 : 4)
+        // 7. Multi-tier cohesive ambient grounding shadow beneath the island
+        .shadow(color: .black.opacity(expanded ? 0.40 : 0.28),
+                radius: expanded ? 22 : 12,
+                y: expanded ? 10 : 5)
     }
 }
 
@@ -203,11 +231,13 @@ public struct IslandRootView: View {
         SurfaceView(metrics: metrics,
                     strokeStyle: island.dropTarget
                         ? AnyShapeStyle(Color.orange.opacity(0.92))
-                        : AnyShapeStyle(Color.white.opacity(island.pointerInside ? 0.22 : 0.14)),
+                        : AnyShapeStyle(Color.white.opacity(island.pointerInside ? 0.24 : 0.16)),
                     strokeWidth: island.dropTarget ? 2 : 1,
                     expanded: island.mode == .expanded,
                     dropTarget: island.dropTarget,
-                    pointerInside: island.pointerInside)
+                    pointerInside: island.pointerInside,
+                    isCharging: power.charging,
+                    isLowBattery: (power.percent ?? 100) < 20 && !power.charging)
             .animation(island.motionAnimation, value: metrics)
     }
 
@@ -262,9 +292,19 @@ public struct IslandRootView: View {
     @ViewBuilder
     private var compactContent: some View {
         if let flash = island.flash {
-            FlashContent(icon: flash.icon, text: flash.text)
+            if flash.icon == "bolt.fill" {
+                ChargingFlashContent(text: flash.text, percent: power.percent)
+            } else {
+                FlashContent(icon: flash.icon, text: flash.text)
+            }
         } else {
             switch island.activity {
+            case .liveActivity:
+                if let live = link.liveActivity {
+                    LiveActivitySlabContent(live: live)
+                } else {
+                    FlashContent(icon: "sparkles", text: "Live Activity")
+                }
             case .timer:
                 TimerWingsContent(timer: timer)
             case .transfer:
@@ -344,6 +384,119 @@ struct WingsRow<Leading: View, Trailing: View>: View {
         }
         .padding(.horizontal, 16)
         .frame(maxHeight: .infinity)
+    }
+}
+
+struct ChargingFlashContent: View {
+    var text: String
+    var percent: Double?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                ZStack {
+                    Circle()
+                        .fill(Color.green.opacity(0.25))
+                        .frame(width: 20, height: 20)
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.green)
+                }
+                Text("Charging")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+
+            Spacer()
+
+            if let pct = percent {
+                HStack(spacing: 4) {
+                    Text("\(Int(pct))%")
+                        .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.green)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.green.opacity(0.80))
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(maxHeight: .infinity)
+    }
+}
+
+public struct LiveActivitySlabContent: View {
+    public var live: LinkHost.MirroredLiveActivity
+
+    public init(live: LinkHost.MirroredLiveActivity) { self.live = live }
+
+    public var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [iconColor.opacity(0.35), iconColor.opacity(0.12)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: live.icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(iconColor)
+            }
+            .frame(width: 36, height: 36)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(live.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    if let lead = live.leadingText, !lead.isEmpty {
+                        Text(lead)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(iconColor.opacity(0.90))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(iconColor.opacity(0.15), in: Capsule())
+                    }
+                }
+                if let sub = live.subtitle {
+                    Text(sub)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.65))
+                        .lineLimit(1)
+                }
+                if let p = live.progress, p > 0 {
+                    Meter(value: p, color: iconColor, height: 3)
+                        .padding(.top, 1)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            if let trail = live.trailingText, !trail.isEmpty {
+                Text(trail)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.10), in: Capsule())
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 52)
+    }
+
+    private var iconColor: Color {
+        switch live.type {
+        case "delivery": return Color.orange
+        case "ride": return Color.cyan
+        case "flight": return Color.blue
+        case "workout": return Color.green
+        default: return IslandPalette.external
+        }
     }
 }
 
@@ -645,30 +798,85 @@ struct ExpandedView: View {
     @ObservedObject var privacy: PrivacyWatch
     var onInteract: () -> Void
 
-    @State private var showingPreferences = false
+    public enum Tab: String, CaseIterable, Identifiable, Sendable {
+        case active = "Active"
+        case clipboard = "Clipboard"
+        case toggles = "Toggles"
+        case shortcuts = "Shortcuts"
+
+        public var id: String { rawValue }
+
+        public var icon: String {
+            switch self {
+            case .active: return "sparkles"
+            case .clipboard: return "doc.on.clipboard"
+            case .toggles: return "switch.2"
+            case .shortcuts: return "command"
+            }
+        }
+    }
+
+    var initialTab: Tab = .active
+    @State private var selectedTab: Tab
+
+    init(island: IslandState, timer: TimerEngine, media: MediaEngine,
+         power: PowerEngine, harbor: HarborStore, link: LinkHost,
+         center: ExternalCenter, clipboard: ClipboardEngine,
+         hudEngine: HudEngine, privacy: PrivacyWatch,
+         initialTab: Tab = .active,
+         onInteract: @escaping () -> Void) {
+        self.island = island
+        self.timer = timer
+        self.media = media
+        self.power = power
+        self.harbor = harbor
+        self.link = link
+        self.center = center
+        self.clipboard = clipboard
+        self.hudEngine = hudEngine
+        self.privacy = privacy
+        self.initialTab = initialTab
+        self._selectedTab = State(initialValue: initialTab)
+        self.onInteract = onInteract
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 6) {
             header
+
             Group {
-                if showingPreferences {
-                    preferencesView
-                } else if media.appName != nil {
-                    NowPlayingExpanded(media: media)
-                } else if timer.isActive || timer.state == .done {
-                    TimerExpanded(timer: timer)
-                } else if !harbor.items.isEmpty {
-                    HarborExpanded(harbor: harbor)
-                } else {
-                    StandbyExpanded(harbor: harbor, timer: timer)
+                switch selectedTab {
+                case .active:
+                    activePanel
+                case .clipboard:
+                    ClipboardPanel(clipboard: clipboard)
+                case .toggles:
+                    QuickTogglesPanel(hudEngine: hudEngine, clipboard: clipboard)
+                case .shortcuts:
+                    SystemShortcutsPanel()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 12)
             .padding(.bottom, 8)
         }
         .onTapGesture { onInteract() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var activePanel: some View {
+        if let live = link.liveActivity {
+            LiveActivityExpanded(live: live)
+        } else if media.appName != nil {
+            NowPlayingExpanded(media: media)
+        } else if timer.isActive || timer.state == .done {
+            TimerExpanded(timer: timer)
+        } else if !harbor.items.isEmpty {
+            HarborExpanded(harbor: harbor)
+        } else {
+            StandbyExpanded(harbor: harbor, timer: timer)
+        }
     }
 
     private var header: some View {
@@ -681,6 +889,41 @@ struct ExpandedView: View {
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
             }
+
+            Spacer()
+
+            // Dynamic segmented tab pill switcher (icon-only for inactive, icon+label for active)
+            HStack(spacing: 2) {
+                ForEach(Tab.allCases) { tab in
+                    Button(action: {
+                        withAnimation(.spring(response: 0.30, dampingFraction: 0.82)) {
+                            selectedTab = tab
+                        }
+                    }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: tab.icon)
+                                .font(.system(size: 9, weight: .semibold))
+                            if selectedTab == tab {
+                                Text(tab.rawValue)
+                                    .font(.system(size: 9.5, weight: .semibold))
+                                    .fixedSize()
+                            }
+                        }
+                        .foregroundStyle(selectedTab == tab ? .white : .white.opacity(0.50))
+                        .padding(.horizontal, selectedTab == tab ? 7 : 5)
+                        .padding(.vertical, 3.5)
+                        .background(
+                            selectedTab == tab
+                                ? Color.white.opacity(0.18)
+                                : Color.clear,
+                            in: Capsule()
+                        )
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                }
+            }
+            .padding(2)
+            .background(Color.white.opacity(0.06), in: Capsule())
 
             Spacer()
 
@@ -712,16 +955,6 @@ struct ExpandedView: View {
                 .background(.white.opacity(0.08), in: Capsule())
             }
 
-            Button(action: { showingPreferences.toggle() }) {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(showingPreferences ? .orange : .white.opacity(0.60))
-                    .frame(width: 22, height: 22)
-                    .background(.white.opacity(showingPreferences ? 0.16 : 0.05), in: Circle())
-            }
-            .buttonStyle(PressableButtonStyle())
-            .accessibilityLabel("Preferences")
-
             Button(action: { island.togglePin() }) {
                 Image(systemName: island.pinned ? "pin.fill" : "pin")
                     .font(.system(size: 10, weight: .medium))
@@ -742,52 +975,426 @@ struct ExpandedView: View {
             .buttonStyle(PressableButtonStyle())
             .accessibilityLabel("Collapse island")
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .frame(height: 32)
     }
+}
 
-    private var preferencesView: some View {
+// MARK: - Utility Panels
+
+struct LiveActivityExpanded: View {
+    var live: LinkHost.MirroredLiveActivity
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [iconColor.opacity(0.35), iconColor.opacity(0.12)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Image(systemName: live.icon)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(iconColor)
+                }
+                .frame(width: 44, height: 44)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(live.title)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                        if let lead = live.leadingText, !lead.isEmpty {
+                            Text(lead)
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(iconColor)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1.5)
+                                .background(iconColor.opacity(0.15), in: Capsule())
+                        }
+                    }
+                    if let sub = live.subtitle {
+                        Text(sub)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.white.opacity(0.70))
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer()
+
+                if let trail = live.trailingText, !trail.isEmpty {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(trail)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text("STATUS")
+                            .font(.system(size: 8.5, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.40))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+            }
+
+            // Milestone / Progress Track
+            if let p = live.progress {
+                VStack(spacing: 4) {
+                    Meter(value: p, color: iconColor, height: 5)
+                    HStack {
+                        Text(live.leadingText ?? "Started")
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.45))
+                        Spacer()
+                        Text(live.trailingText ?? "Arriving")
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.45))
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+    }
+
+    private var iconColor: Color {
+        switch live.type {
+        case "delivery": return Color.orange
+        case "ride": return Color.cyan
+        case "flight": return Color.blue
+        case "workout": return Color.green
+        default: return IslandPalette.external
+        }
+    }
+}
+
+struct ClipboardPanel: View {
+    @ObservedObject var clipboard: ClipboardEngine
+    @State private var copiedId: UUID?
+
+    var body: some View {
         VStack(spacing: 8) {
             HStack {
-                Text("PREFERENCES")
+                Text("CLIPBOARD HISTORY")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.50))
+                    .tracking(0.5)
+                if !clipboard.entries.isEmpty {
+                    Text("\(clipboard.entries.count)")
+                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.white.opacity(0.10), in: Capsule())
+                }
+                Spacer()
+                if !clipboard.entries.isEmpty {
+                    Button("Clear") {
+                        clipboard.clear()
+                    }
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.60))
+                    .buttonStyle(PressableButtonStyle())
+                }
+            }
+
+            if !clipboard.enabled {
+                VStack(spacing: 6) {
+                    Image(systemName: "doc.on.clipboard")
+                        .font(.system(size: 22))
+                        .foregroundStyle(IslandPalette.clipboard)
+                    Text("Clipboard history is opt-in for privacy")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("History is stored in volatile memory only and never saved to disk.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.60))
+                        .multilineTextAlignment(.center)
+                    Button("Enable Clipboard History") {
+                        clipboard.setEnabled(true)
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 5)
+                    .background(Color.white, in: Capsule())
+                    .buttonStyle(PressableButtonStyle())
+                    .padding(.top, 4)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 10)
+            } else if clipboard.entries.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white.opacity(0.35))
+                    Text("No copied text yet")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.65))
+                    Text("Copy text anywhere on your Mac to access it here.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.40))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 14)
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 5) {
+                        ForEach(clipboard.entries) { entry in
+                            HStack(spacing: 8) {
+                                Image(systemName: "text.alignleft")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(IslandPalette.clipboard)
+                                    .frame(width: 16)
+
+                                Text(entry.preview)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.white.opacity(0.85))
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+
+                                Spacer(minLength: 4)
+
+                                Button(action: {
+                                    clipboard.copy(entry)
+                                    copiedId = entry.id
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                        if copiedId == entry.id { copiedId = nil }
+                                    }
+                                }) {
+                                    HStack(spacing: 3) {
+                                        if copiedId == entry.id {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 8.5, weight: .bold))
+                                                .foregroundStyle(.green)
+                                            Text("Copied")
+                                                .font(.system(size: 9.5, weight: .bold))
+                                                .foregroundStyle(.green)
+                                        } else {
+                                            Image(systemName: "doc.on.doc")
+                                                .font(.system(size: 8.5, weight: .medium))
+                                            Text("Copy")
+                                                .font(.system(size: 9.5, weight: .medium))
+                                        }
+                                    }
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(Color.white.opacity(copiedId == entry.id ? 0.16 : 0.08), in: Capsule())
+                                }
+                                .buttonStyle(PressableButtonStyle())
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .frame(maxHeight: 140)
+            }
+        }
+    }
+}
+
+struct QuickTogglesPanel: View {
+    @ObservedObject var hudEngine: HudEngine
+    @ObservedObject var clipboard: ClipboardEngine
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("QUICK TOGGLES")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.white.opacity(0.50))
                     .tracking(0.5)
                 Spacer()
-                Button("Done") { showingPreferences = false }
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(.orange)
             }
 
             VStack(spacing: 6) {
-                Toggle("Volume HUD at notch", isOn: Binding(
-                    get: { hudEngine.enabled },
-                    set: { hudEngine.setEnabled($0) }
-                ))
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.85))
-                .toggleStyle(.switch)
-                .tint(.orange)
+                toggleRow(
+                    icon: "speaker.wave.2.fill",
+                    color: Color.blue,
+                    title: "Volume HUD at Notch",
+                    subtitle: "Fluid volume bar below camera housing",
+                    isOn: Binding(
+                        get: { hudEngine.enabled },
+                        set: { hudEngine.setEnabled($0) }
+                    )
+                )
 
-                Toggle("Clipboard history shelf", isOn: Binding(
-                    get: { clipboard.enabled },
-                    set: { clipboard.setEnabled($0) }
-                ))
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.85))
-                .toggleStyle(.switch)
-                .tint(IslandPalette.clipboard)
+                toggleRow(
+                    icon: "doc.on.clipboard.fill",
+                    color: IslandPalette.clipboard,
+                    title: "Clipboard History",
+                    subtitle: "Fast in-memory snippet shelf",
+                    isOn: Binding(
+                        get: { clipboard.enabled },
+                        set: { clipboard.setEnabled($0) }
+                    )
+                )
 
-                Toggle("Open at Login", isOn: Binding(
-                    get: { LaunchAtLogin.enabled },
-                    set: { try? LaunchAtLogin.set($0) }
-                ))
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.85))
-                .toggleStyle(.switch)
-                .tint(.orange)
+                toggleRow(
+                    icon: "arrow.triangle.2.circlepath",
+                    color: Color.orange,
+                    title: "Open at Login",
+                    subtitle: "Launch Notcher automatically",
+                    isOn: Binding(
+                        get: { LaunchAtLogin.enabled },
+                        set: { try? LaunchAtLogin.set($0) }
+                    )
+                )
             }
         }
+    }
+
+    private func toggleRow(icon: String, color: Color, title: String, subtitle: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(color.opacity(0.20))
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+            .frame(width: 26, height: 26)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.white.opacity(0.50))
+            }
+
+            Spacer()
+
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(color)
+                .scaleEffect(0.85)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+}
+
+struct SystemShortcutsPanel: View {
+    @State private var feedbackText: String?
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("SYSTEM SHORTCUTS")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.50))
+                    .tracking(0.5)
+                Spacer()
+                if let fb = feedbackText {
+                    Text(fb)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(.green)
+                }
+            }
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                shortcutTile(icon: "lock.fill", color: .red, title: "Lock Screen", subtitle: "Instant lock") {
+                    feedback("Locked screen")
+                    lockScreen()
+                }
+
+                shortcutTile(icon: "moon.fill", color: .purple, title: "Sleep Display", subtitle: "Turn off screen") {
+                    feedback("Display sleep")
+                    sleepDisplay()
+                }
+
+                shortcutTile(icon: "camera.viewfinder", color: .cyan, title: "Screenshot Area", subtitle: "Copy to pasteboard") {
+                    feedback("Crosshair ready")
+                    screenshotArea()
+                }
+
+                shortcutTile(icon: "apple.terminal", color: .green, title: "Terminal", subtitle: "Open shell") {
+                    feedback("Opening Terminal")
+                    openTerminal()
+                }
+            }
+        }
+    }
+
+    private func feedback(_ text: String) {
+        feedbackText = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if feedbackText == text { feedbackText = nil }
+        }
+    }
+
+    private func shortcutTile(icon: String, color: Color, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(color.opacity(0.20))
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(color)
+                }
+                .frame(width: 30, height: 30)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text(subtitle)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.50))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+
+    private func lockScreen() {
+        let lib = dlopen("/System/Library/PrivateFrameworks/login.framework/Versions/Current/login", RTLD_LAZY)
+        if let sym = dlsym(lib, "SACLockScreenImmediate") {
+            let lock = unsafeBitCast(sym, to: (@convention(c) () -> Void).self)
+            lock()
+        } else {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+            p.arguments = ["displaysleepnow"]
+            try? p.run()
+        }
+    }
+
+    private func sleepDisplay() {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        p.arguments = ["displaysleepnow"]
+        try? p.run()
+    }
+
+    private func screenshotArea() {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-i", "-c"]
+        try? p.run()
+    }
+
+    private func openTerminal() {
+        let url = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 }
 

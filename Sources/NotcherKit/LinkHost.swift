@@ -12,6 +12,37 @@ public final class LinkHost: ObservableObject {
     @Published public private(set) var enabled = true
     @Published public private(set) var code: String = ""
     @Published public private(set) var receiving: (fileName: String, got: Int, total: Int)?
+    public struct MirroredLiveActivity: Equatable, Sendable {
+        public var id: String
+        public var type: String
+        public var title: String
+        public var subtitle: String?
+        public var progress: Double?
+        public var icon: String
+        public var leadingText: String?
+        public var trailingText: String?
+        public var updatedAt: Date
+
+        public init(id: String, type: String, title: String, subtitle: String? = nil,
+                    progress: Double? = nil, icon: String = "app.badge",
+                    leadingText: String? = nil, trailingText: String? = nil,
+                    updatedAt: Date = Date()) {
+            self.id = id
+            self.type = type
+            self.title = title
+            self.subtitle = subtitle
+            self.progress = progress
+            self.icon = icon
+            self.leadingText = leadingText
+            self.trailingText = trailingText
+            self.updatedAt = updatedAt
+        }
+    }
+
+    @Published public private(set) var liveActivity: MirroredLiveActivity?
+    public func setLiveActivityForTesting(_ act: MirroredLiveActivity?) {
+        self.liveActivity = act
+    }
     @Published public private(set) var remoteTimer: (peer: String, remaining: Double, total: Double, label: String, updatedAt: Date)?
     /// Tray text-field drafts (view state kept here: no @State under CLT).
     @Published public var draftMessage: String = ""
@@ -25,6 +56,7 @@ public final class LinkHost: ObservableObject {
         case textReceived(String, String)   // peer, preview
         case fileReceived(String, String)  // peer, file name
         case timerStartedRemotely(String)  // peer
+        case liveActivityReceived(String, String) // peer, title
     }
 
     private var transport: LinkTransport?
@@ -231,6 +263,23 @@ public final class LinkHost: ObservableObject {
             if let name = msg.fileName { finishFile(name: name, from: msg.deviceName, deviceID: msg.deviceID) }
         case .battery, .mediaState:
             break
+        case .liveActivityUpdate:
+            if let title = msg.activityTitle, !title.isEmpty {
+                liveActivity = MirroredLiveActivity(
+                    id: msg.activityID ?? UUID().uuidString,
+                    type: msg.activityType ?? "generic",
+                    title: title,
+                    subtitle: msg.activitySubtitle,
+                    progress: msg.activityProgress,
+                    icon: msg.activityIcon ?? "app.badge",
+                    leadingText: msg.activityLeadingText,
+                    trailingText: msg.activityTrailingText,
+                    updatedAt: Date()
+                )
+                onEvent?(.liveActivityReceived(msg.deviceName, title))
+            }
+        case .liveActivityEnd:
+            liveActivity = nil
         }
     }
 

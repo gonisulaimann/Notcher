@@ -46,6 +46,16 @@ public struct LinkMessage: Codable, Sendable, Equatable {
     public var mediaTitle: String?
     public var mediaArtist: String?
     public var playing: Bool?
+    /// iPhone Live Activity synchronization fields
+    public var activityID: String?
+    public var activityType: String?
+    public var activityTitle: String?
+    public var activitySubtitle: String?
+    public var activityProgress: Double?
+    public var activityIcon: String?
+    public var activityLeadingText: String?
+    public var activityTrailingText: String?
+    public var activityTimestamp: Double?
 
     public enum Kind: String, Codable, Sendable {
         case hello
@@ -60,6 +70,8 @@ public struct LinkMessage: Codable, Sendable, Equatable {
         case fileDone
         case battery
         case mediaState
+        case liveActivityUpdate
+        case liveActivityEnd
     }
 
     public init(kind: Kind, deviceName: String, deviceID: String) {

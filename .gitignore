@@ -11,6 +11,7 @@ Notcher.app/
 # Snapshots / probe residue
 *.dmg
 *.png
+!docs/images/*.png
 probe-*.txt
 notcher-probe-note.txt
 

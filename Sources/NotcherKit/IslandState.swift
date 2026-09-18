@@ -32,6 +32,7 @@ public final class IslandState: ObservableObject {
 
     public enum Activity: Equatable, Sendable {
         case none
+        case liveActivity
         case timer
         case transfer
         case remoteTimer
@@ -68,22 +69,18 @@ public final class IslandState: ObservableObject {
     private var hudResume: Mode = .idle
     public let reduceMotion: Bool
 
-    /// The island's one animation curve — a mass-spring-damper (SwiftUI's
-    /// spring is a solved damped harmonic oscillator; response ≈ ω, damping
-    /// fraction ≈ ζ). ζ 0.85: critically-damped-plus, one breath of
-    /// overshoot, zero wobble; fully interruptible (retargeting mid-flight
-    /// continues from current velocity — the definition of fluid).
-    /// Reduced Motion keeps a short ease — motion still exists, no bounce.
+    /// Fluid mass-spring-damper curve tuned for buttery-smooth morphs
+    /// like iPhone 18 Dynamic Island.
     public var motionAnimation: Animation {
         reduceMotion ? Animation.easeOut(duration: 0.12)
-                     : Animation.spring(response: 0.45, dampingFraction: 0.85)
+                     : Animation.spring(response: 0.38, dampingFraction: 0.76, blendDuration: 0)
     }
 
     /// Content morph curve: crossfade + settle, slightly quicker than the
     /// container morph so text lands as the glass arrives.
     public var contentAnimation: Animation {
         reduceMotion ? Animation.easeOut(duration: 0.1)
-                     : Animation.spring(response: 0.32, dampingFraction: 0.88)
+                     : Animation.spring(response: 0.30, dampingFraction: 0.82)
     }
 
     /// HUD meter curve: fast tracking, no bounce (Apple-HUD feel).
@@ -106,19 +103,21 @@ public final class IslandState: ObservableObject {
         case .expanded: .expanded
         case .hud: .hud
         }
-        return IslandMetrics.metrics(for: surface, layout: layout, activity: activity)
+        let metricsActivity: IslandState.Activity = (activity == .liveActivity) ? .media : activity
+        return IslandMetrics.metrics(for: surface, layout: layout, activity: metricsActivity)
     }
 
     public init() {
         self.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    /// Re-resolve which single activity owns the pill. Priority:
-    /// local timer › transfer › remote (iPhone) timer › media › external.
-    /// Third-party activities can never preempt anything alive on this Mac.
-    public func resolve(timerActive: Bool, transferActive: Bool, remoteTimerActive: Bool, mediaPlaying: Bool, externalActive: Bool) {
+    /// Re-resolve which single activity owns the pill. Strict Single-Activity constraint:
+    /// liveActivity (mirrored iPhone) › local timer › transfer › remote timer › media › external.
+    public func resolve(timerActive: Bool, transferActive: Bool, remoteTimerActive: Bool,
+                        liveActivityActive: Bool = false, mediaPlaying: Bool, externalActive: Bool) {
         let next: Activity
-        if timerActive { next = .timer }
+        if liveActivityActive { next = .liveActivity }
+        else if timerActive { next = .timer }
         else if transferActive { next = .transfer }
         else if remoteTimerActive { next = .remoteTimer }
         else if mediaPlaying { next = .media }

@@ -16,6 +16,7 @@ struct ContentView: View {
             List {
                 statusSection
                 macTimerSection
+                liveActivitySection
                 sendSection
                 receivedSection
                 settingsSection
@@ -92,6 +93,68 @@ struct ContentView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var liveActivitySection: some View {
+        Section("iPhone Live Activity Mirror") {
+            Text("Simulate or mirror an iPhone Live Activity to the Mac dynamic island.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Button {
+                peer.sendLiveActivity(
+                    id: "food-delivery",
+                    type: "delivery",
+                    title: "Joe's Pizza",
+                    subtitle: "Courier on the way • 8 mins",
+                    progress: 0.65,
+                    icon: "bag.fill",
+                    leadingText: "Order #482",
+                    trailingText: "ETA 8m"
+                )
+            } label: {
+                Label("Start Pizza Delivery (ETA 8m)", systemImage: "bag.fill")
+            }
+            .disabled(peer.peers.isEmpty)
+
+            Button {
+                peer.sendLiveActivity(
+                    id: "uber-ride",
+                    type: "ride",
+                    title: "Uber Premier",
+                    subtitle: "Toyota Camry • 4 mins away",
+                    progress: 0.40,
+                    icon: "car.fill",
+                    leadingText: "Driver En Route",
+                    trailingText: "4 min"
+                )
+            } label: {
+                Label("Start Ride Share (4 min away)", systemImage: "car.fill")
+            }
+            .disabled(peer.peers.isEmpty)
+
+            Button {
+                peer.sendLiveActivity(
+                    id: "flight-tracker",
+                    type: "flight",
+                    title: "Flight BA 184",
+                    subtitle: "London LHR → New York JFK",
+                    progress: 0.85,
+                    icon: "airplane",
+                    leadingText: "Gate B22",
+                    trailingText: "On Time"
+                )
+            } label: {
+                Label("Start Flight Tracker (BA 184)", systemImage: "airplane")
+            }
+            .disabled(peer.peers.isEmpty)
+
+            Button(role: .destructive) {
+                peer.endLiveActivity(id: "active")
+            } label: {
+                Label("End Live Activity", systemImage: "xmark.circle")
+            }
+            .disabled(peer.peers.isEmpty)
         }
     }
 

@@ -142,6 +142,28 @@ struct Snap {
         island.activity = .external
         shoot("compact-external", dark: true)
 
+        // 3c-2. live activity slab
+        island.mode = .compact
+        island.activity = .liveActivity
+        link.setLiveActivityForTesting(LinkHost.MirroredLiveActivity(
+            id: "pizza-order",
+            type: "delivery",
+            title: "Joe's Pizza",
+            subtitle: "Courier on the way",
+            progress: 0.70,
+            icon: "bag.fill",
+            leadingText: "Order #482",
+            trailingText: "ETA 8m"
+        ))
+        shoot("compact-live", dark: true)
+        link.setLiveActivityForTesting(nil)
+
+        // 3c-3. charging flash animation
+        island.mode = .compact
+        island.showFlash(icon: "bolt.fill", text: "Charging")
+        shoot("charging-flash", dark: true)
+        island.flash = nil
+
         // 3d. HUD capsule
         island.mode = .hud
         island.hud = IslandState.HudContent(kind: .volume(muted: false), value: 0.65)
