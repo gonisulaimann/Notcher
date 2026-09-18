@@ -77,19 +77,19 @@ public struct DroppyAppStructure: View {
 /// and non-linear spring physics.
 public enum DroppyPhysics {
     /// Non-linear spring curve for container geometry morphing:
-    /// response: 0.32s, dampingFraction: 0.78, blendDuration: 0.25s
+    /// response: 0.30s, dampingFraction: 0.84, blendDuration: 0.20s
     public static let motionSpring = Animation.interactiveSpring(
-        response: 0.32,
-        dampingFraction: 0.78,
-        blendDuration: 0.25
+        response: 0.30,
+        dampingFraction: 0.84,
+        blendDuration: 0.20
     )
 
     /// Content morph curve for smooth opacity cross-fade during liquid stretch:
-    /// response: 0.28s, dampingFraction: 0.82, blendDuration: 0.20s
+    /// response: 0.26s, dampingFraction: 0.86, blendDuration: 0.18s
     public static let contentSpring = Animation.interactiveSpring(
-        response: 0.28,
-        dampingFraction: 0.82,
-        blendDuration: 0.20
+        response: 0.26,
+        dampingFraction: 0.86,
+        blendDuration: 0.18
     )
 
     /// HUD meter response for immediate feedback with zero bounce
@@ -104,7 +104,7 @@ public typealias DroppyStateMachine = IslandState
 // MARK: - 4. Metal & CoreAnimation Liquid Glass View Modifier
 
 /// Reusable Metal / CoreAnimation liquid glass modifier applying ultraThinMaterial,
-/// refractive dark gradient, subtle 15% white inner border, 20% black shadow, and
+/// refractive dark gradient, subtle 12% white inner border, dual ambient shadows, and
 /// smooth edge vignette dissolving.
 public struct DroppyLiquidGlass: ViewModifier {
     public let metrics: IslandMetrics
@@ -129,7 +129,7 @@ public struct DroppyLiquidGlass: ViewModifier {
             .background(
                 SurfaceView(
                     metrics: metrics,
-                    strokeStyle: AnyShapeStyle(Color.white.opacity(0.15)),
+                    strokeStyle: AnyShapeStyle(Color.white.opacity(0.12)),
                     strokeWidth: 0.75,
                     expanded: metrics.bodyH > 60,
                     dropTarget: dropTarget,
@@ -139,7 +139,8 @@ public struct DroppyLiquidGlass: ViewModifier {
                 )
             )
             .clipShape(MorphShape(m: metrics))
-            .shadow(color: Color.black.opacity(0.20), radius: 12, x: 0, y: 6)
+            .shadow(color: Color.black.opacity(0.28), radius: 4, x: 0, y: 2)
+            .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 10)
     }
 }
 

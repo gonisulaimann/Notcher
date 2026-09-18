@@ -89,9 +89,9 @@ struct SurfaceView: View {
             LinearGradient(
                 stops: [
                     .init(color: .black, location: 0.0),
-                    .init(color: .black.opacity(0.96), location: 0.22),
-                    .init(color: Color(red: 0.08, green: 0.08, blue: 0.10).opacity(0.82), location: 0.55),
-                    .init(color: Color(red: 0.03, green: 0.03, blue: 0.04).opacity(0.88), location: 1.0)
+                    .init(color: .black, location: 0.16),
+                    .init(color: Color(red: 0.078, green: 0.078, blue: 0.102).opacity(0.85), location: 0.45), // #14141a
+                    .init(color: Color(red: 0.031, green: 0.031, blue: 0.039).opacity(0.90), location: 1.0)  // #08080a
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -128,7 +128,7 @@ struct SurfaceView: View {
         .overlay(
             // 6. Subtle inner borders & dynamic desktop-adaptive specular highlights:
             // Top edge is Color.clear to fuse with the hardware notch without seams or dividing borders.
-            // Rim has subtle 15% white opacity inner border with hover specular catch.
+            // Rim has subtle 12% white opacity inner border with hover specular catch.
             MorphShape(m: metrics)
                 .stroke(
                     dropTarget
@@ -137,9 +137,9 @@ struct SurfaceView: View {
                             LinearGradient(
                                 stops: [
                                     .init(color: .clear, location: 0.0),
-                                    .init(color: .clear, location: 0.12),
-                                    .init(color: Color.white.opacity(0.06), location: 0.40),
-                                    .init(color: Color.white.opacity(pointerInside ? 0.22 : 0.15), location: 1.0)
+                                    .init(color: .clear, location: 0.18),
+                                    .init(color: Color.white.opacity(0.04), location: 0.40),
+                                    .init(color: Color.white.opacity(pointerInside ? 0.18 : 0.12), location: 1.0)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -149,8 +149,9 @@ struct SurfaceView: View {
                 )
                 .allowsHitTesting(false)
         )
-        // 7. Subtle drop shadow: radius 12, y: 6 with black 20% opacity
-        .shadow(color: Color.black.opacity(0.20), radius: 12, x: 0, y: 6)
+        // 7. Soft dual ambient shadows: contact shadow + soft ambient spread
+        .shadow(color: Color.black.opacity(0.28), radius: 4, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 10)
     }
 }
 
@@ -447,7 +448,7 @@ public struct LiveActivitySlabContent: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(iconColor)
             }
-            .frame(width: 36, height: 36)
+            .frame(width: 32, height: 32)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -457,7 +458,7 @@ public struct LiveActivitySlabContent: View {
                         .lineLimit(1)
                     if let lead = live.leadingText, !lead.isEmpty {
                         Text(lead)
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 9.5, weight: .medium))
                             .foregroundStyle(iconColor.opacity(0.90))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -488,7 +489,7 @@ public struct LiveActivitySlabContent: View {
             }
         }
         .padding(.horizontal, 14)
-        .frame(height: 52)
+        .frame(height: 44)
     }
 
     private var iconColor: Color {
@@ -573,59 +574,43 @@ struct IdleHintContent: View {
     }
 }
 
-/// Media slab: artwork, title/artist with live waveform, scrubber, and tactile controls.
+/// Media slab: minimal, un-cluttered collapsed single-activity context.
+/// Leading: album artwork (or music glyph).
+/// Middle: song title and artist in pristine SF Pro typography.
+/// Trailing: subtle live audio waveform equalizer.
 public struct MediaSlabContent: View {
     @ObservedObject var media: MediaEngine
 
     public init(media: MediaEngine) { self.media = media }
 
     public var body: some View {
-        HStack(spacing: 12) {
-            ArtworkView(url: media.artworkURL, data: media.artworkData)
-                .frame(width: 44, height: 44)
-                .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text(media.title ?? "Nothing playing")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .tracking(-0.25)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if media.playing {
-                        WaveformIndicator(isPlaying: true, color: IslandPalette.media)
-                    }
-                }
-                Text([media.artist, media.appName].compactMap { $0 }.joined(separator: " · "))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.65))
+        HStack(spacing: 10) {
+            ArtworkView(url: media.artworkURL, data: media.artworkData, cornerRadius: 6)
+                .frame(width: 26, height: 26)
+                .shadow(color: .black.opacity(0.35), radius: 3, y: 1.5)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(media.title ?? "Nothing playing")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .tracking(-0.2)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                if let d = media.duration, d > 0 {
-                    HStack(spacing: 5) {
-                        Text(media.positionText)
-                            .font(.system(size: 9.5, weight: .medium, design: .rounded).monospacedDigit())
-                            .foregroundStyle(.white.opacity(0.50))
-                        Meter(value: media.progressFraction, color: IslandPalette.media, height: 3.5)
-                            .frame(maxWidth: .infinity)
-                        Text("-" + MediaEngine.mmss(max(0, d - media.livePosition)))
-                            .font(.system(size: 9.5, weight: .medium, design: .rounded).monospacedDigit())
-                            .foregroundStyle(.white.opacity(0.50))
-                    }
-                    .padding(.top, 1)
+                if let subtitle = [media.artist, media.appName].compactMap({ $0 }).first, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 10.5, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.60))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
-            Spacer(minLength: 4)
-            HStack(spacing: 6) {
-                CompactMediaButton(system: "backward.fill", label: "Previous track") { media.previous() }
-                CompactMediaButton(system: media.playing ? "pause.fill" : "play.fill",
-                                   label: media.playing ? "Pause" : "Play",
-                                   prominent: true) { media.playPause() }
-                CompactMediaButton(system: "forward.fill", label: "Next track") { media.next() }
-            }
+
+            Spacer(minLength: 8)
+
+            WaveformIndicator(isPlaying: media.playing, color: IslandPalette.media)
         }
         .padding(.horizontal, 14)
-        .frame(height: 56)
+        .frame(height: 42)
     }
 }
 
@@ -646,8 +631,8 @@ public struct ExternalSlabContent: View {
     }
 
     public var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [IslandPalette.external.opacity(0.28), IslandPalette.external.opacity(0.12)],
@@ -656,13 +641,13 @@ public struct ExternalSlabContent: View {
                     )
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .strokeBorder(IslandPalette.external.opacity(0.35), lineWidth: 1)
                 )
-                .frame(width: 44, height: 44)
+                .frame(width: 32, height: 32)
                 .overlay(
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(IslandPalette.external)
                 )
             VStack(alignment: .leading, spacing: 2) {
@@ -678,8 +663,8 @@ public struct ExternalSlabContent: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if let p = progress {
-                    Meter(value: p, color: IslandPalette.external, height: 3.5)
-                        .padding(.top, 2)
+                    Meter(value: p, color: IslandPalette.external, height: 3)
+                        .padding(.top, 1)
                 }
             }
             Spacer(minLength: 4)
@@ -691,7 +676,7 @@ public struct ExternalSlabContent: View {
                 .background(IslandPalette.external.opacity(0.15), in: Capsule())
         }
         .padding(.horizontal, 14)
-        .frame(height: 56)
+        .frame(height: 44)
     }
 }
 
@@ -2292,15 +2277,16 @@ struct Meter: View {
 struct ArtworkView: View {
     var url: URL?
     var data: Data?
+    var cornerRadius: CGFloat = 10
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.06)],
                                  startPoint: .topLeading, endPoint: .bottomTrailing))
             .overlay { artworkOverlay }
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(.white.opacity(0.12), lineWidth: 1)
             )
     }

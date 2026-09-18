@@ -193,7 +193,7 @@ public final class IslandController {
         // Reads live metrics at hit time: morphs never desync hit-testing.
         hit.test = { [weak self] point in
             guard let self else { return false }
-            return self.shapeContains(windowPoint: point, slop: 6)
+            return self.shapeContains(windowPoint: point, slop: 0)
         }
         hit.menuProvider = { [weak self] in
             self?.contextMenuProvider?()
@@ -260,12 +260,30 @@ public final class IslandController {
         }
     }
 
-    /// Shape test in window coordinates (bottom-left origin), against live
-    /// metrics. Single implementation behind both the hit-test container
-    /// and the click-outside monitor.
+    /// Precision hit testing in window coordinates (bottom-left origin).
+    /// Enforces strict top-edge proximity in idle mode: only the physical camera housing
+    /// pixels or a microscopic 2–3 pixel top bezel strip will intercept events.
     private func shapeContains(windowPoint: NSPoint, slop: CGFloat) -> Bool {
         let contentH = panel.contentView?.bounds.height ?? IslandMetrics.canvasSize.height
         let tl = CGPoint(x: windowPoint.x, y: contentH - windowPoint.y)
+        let canvasW = IslandMetrics.canvasSize.width
+
+        // In idle mode (collapsed with no live activity body), enforce strict top-edge proximity.
+        // Sweeping across the menu bar or below the notch falls through cleanly to macOS.
+        let isIdle = (!expandedVisible && metrics.bodyH <= 12)
+        if isIdle {
+            let midX = canvasW / 2
+            if layout.hasNotch {
+                let notchHalfW = max(layout.notchWidth / 2, metrics.chinW / 2)
+                let inNotchHousing = (tl.y >= 0 && tl.y <= layout.topInset && abs(tl.x - midX) <= notchHalfW)
+                let inTopEdgeStrip = (tl.y >= 0 && tl.y <= 3.0 && abs(tl.x - midX) <= (metrics.width / 2))
+                return inNotchHousing || inTopEdgeStrip
+            } else {
+                return (tl.y >= 0 && tl.y <= 3.0 && abs(tl.x - midX) <= (metrics.width / 2))
+            }
+        }
+
+        // In compact or expanded mode, hit-test against the exact morph path.
         return IslandMetrics.hitTest(tl, in: IslandMetrics.canvasSize, m: metrics, slop: slop)
     }
 

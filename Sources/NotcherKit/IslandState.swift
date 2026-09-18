@@ -74,14 +74,14 @@ public final class IslandState: ObservableObject {
     public var motionAnimation: Animation {
         reduceMotion
             ? Animation.easeOut(duration: 0.12)
-            : Animation.interactiveSpring(response: 0.32, dampingFraction: 0.78, blendDuration: 0.25)
+            : Animation.interactiveSpring(response: 0.30, dampingFraction: 0.84, blendDuration: 0.20)
     }
 
     /// Content morph curve: clean opacity & settle transition during the morph phase.
     public var contentAnimation: Animation {
         reduceMotion
             ? Animation.easeOut(duration: 0.10)
-            : Animation.interactiveSpring(response: 0.28, dampingFraction: 0.82, blendDuration: 0.20)
+            : Animation.interactiveSpring(response: 0.26, dampingFraction: 0.86, blendDuration: 0.18)
     }
 
     /// HUD meter curve: fast tracking, no bounce (Apple-HUD feel).
@@ -163,7 +163,10 @@ public final class IslandState: ObservableObject {
         hoverWork?.cancel()
         hoverExitWork?.cancel()
         guard mode != .expanded else { return }
-        let delay: TimeInterval = reduceMotion ? 0 : 0.16
+        // Strict 60–80ms hover-intent delay before expanding.
+        // Sweeping the cursor across the top menu bar will not trigger the island;
+        // the user must intentionally rest the cursor on the top bezel/notch area.
+        let delay: TimeInterval = reduceMotion ? 0 : 0.075
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self, self.mode != .expanded else { return }
@@ -179,7 +182,7 @@ public final class IslandState: ObservableObject {
         hoverExitWork?.cancel()
         // Un-hovering snaps back instantly without frame drops or oscillations.
         guard mode == .expanded, !pinned else { return }
-        let delay: TimeInterval = reduceMotion ? 0.02 : 0.10
+        let delay: TimeInterval = reduceMotion ? 0.02 : 0.06
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self, self.mode == .expanded, !self.pinned else { return }

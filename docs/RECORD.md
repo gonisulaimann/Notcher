@@ -900,3 +900,42 @@ A comprehensive architectural and design overhaul transforming Notcher into a bu
 5. **Watchdog Engine & Panic Exit Listener**:
    - Automated `WatchdogEngine` monitoring main-thread runloop latency (6s threshold) and resident memory footprint (512MB ceiling) with graceful window unregistration.
    - Global and local panic exit listeners (`Cmd + Shift + Option + Esc`, `Cmd + Q`, `Esc`).
+
+## Phase 13: 0.7.2 — Precision Hardware Fusion & HIG Architecture Rewrite
+
+### Overhaul Highlights
+1. **Precision Hardware Hit-Testing & Edge Triggering**:
+   - In `idle` mode, mouse interactions are constrained strictly to the physical camera housing pixels (`tl.y <= layout.topInset` & `abs(tl.x - midX) <= notchWidth/2`) or a microscopic 2–3px top-edge bezel strip (`tl.y <= 3.0`).
+   - Completely eliminated erratic triggers across the screen and menu bar: sweeping the cursor across the top menu bar passes 100% through to macOS.
+   - Removed arbitrary hit-test slop (`slop: 0`) in `ShapeHitView.test`.
+
+2. **Hover Intent & Debounce**:
+   - Implemented strict 75ms hover-intent delay before expanding, ensuring rapid cursor sweeps across the screen never accidentally trigger the island.
+   - Snappy 60ms collapse on cursor exit without frame drops, lag, or stuck expanded state.
+
+3. **True Hardware-Fused Spatial Geometry & Spring Physics**:
+   - Non-linear spring curves refined to `.interactiveSpring(response: 0.30, dampingFraction: 0.84, blendDuration: 0.20)` for natural liquid tension and immediate snap-back.
+   - Content cross-fade curve refined to `.interactiveSpring(response: 0.26, dampingFraction: 0.86, blendDuration: 0.18)`.
+   - Solid pitch-black (`#000000`) top band across the full notch height with zero specular stroke at the bezel, creating an unbroken optical illusion of pouring directly out of the physical hardware.
+
+4. **Apple HIG Visual Polish & Single-Activity Discipline**:
+   - Collapsed `Now Playing` simplified to pristine album art (26x26, corner radius 6), crisp single-line SF Pro typography, and live audio waveform equalizer (`WaveformIndicator`). Complex scrubbers and playback buttons moved exclusively to the expanded tray hero card.
+   - Hairline specular inner border tuned to 12% white opacity.
+   - Soft dual ambient shadows: 4pt contact shadow + 24pt ambient spread.
+   - Refined `LiveActivitySlabContent` and `ExternalSlabContent` to 44pt height with 32x32 rounded icon badges.
+
+### Verification Matrix (100% Green)
+- `NotcherProbe hittest`: 11/11 PASS
+- `NotcherProbe stress`: 10/10 PASS (0 steady tail frame changes)
+- `NotcherProbe godmode`: 6/6 PASS
+- `NotcherProbe overlap`: 6/6 PASS
+- `NotcherProbe external`: 9/9 PASS
+- `NotcherProbe persistence`: 4/4 PASS
+- `NotcherProbe poweredge`: 4/4 PASS
+- `NotcherProbe naming`: 5/5 PASS
+- `NotcherProbe firstrun`: 6/6 PASS
+- `NotcherProbe socket`: 5/5 PASS
+- `NotcherProbe sensors`: 11/11 PASS
+- `LinkSelfTest`: 8/8 PASS
+- `IslandSnapshot`: 12/12 verified high-fidelity offscreen snapshot renders.
+
