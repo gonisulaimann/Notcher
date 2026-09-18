@@ -87,7 +87,7 @@ public final class ClipboardEngine: ObservableObject {
         poll = t
     }
 
-    private func stop() {
+    public func stop() {
         poll?.invalidate()
         poll = nil
     }

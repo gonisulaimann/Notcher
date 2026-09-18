@@ -69,18 +69,19 @@ public final class IslandState: ObservableObject {
     private var hudResume: Mode = .idle
     public let reduceMotion: Bool
 
-    /// Fluid mass-spring-damper curve tuned for buttery-smooth morphs
-    /// like iPhone 18 Dynamic Island.
+    /// Liquid morphic spring physics tuned for native Apple Parity.
+    /// Inertial expansion scales elastically from the center of the camera housing.
     public var motionAnimation: Animation {
-        reduceMotion ? Animation.easeOut(duration: 0.12)
-                     : Animation.spring(response: 0.38, dampingFraction: 0.76, blendDuration: 0)
+        reduceMotion
+            ? Animation.easeOut(duration: 0.12)
+            : Animation.interactiveSpring(response: 0.32, dampingFraction: 0.78, blendDuration: 0.25)
     }
 
-    /// Content morph curve: crossfade + settle, slightly quicker than the
-    /// container morph so text lands as the glass arrives.
+    /// Content morph curve: clean opacity & settle transition during the morph phase.
     public var contentAnimation: Animation {
-        reduceMotion ? Animation.easeOut(duration: 0.1)
-                     : Animation.spring(response: 0.30, dampingFraction: 0.82)
+        reduceMotion
+            ? Animation.easeOut(duration: 0.10)
+            : Animation.interactiveSpring(response: 0.28, dampingFraction: 0.82, blendDuration: 0.20)
     }
 
     /// HUD meter curve: fast tracking, no bounce (Apple-HUD feel).
@@ -96,6 +97,9 @@ public final class IslandState: ObservableObject {
     public func surfaceMetrics(layout: NotchGeometry.Layout) -> IslandMetrics {
         if let beat = overtureBeat {
             return IslandMetrics.overture(beat, layout: layout)
+        }
+        if mode == .compact, flash != nil {
+            return IslandMetrics.compactSlim(layout)
         }
         let surface: IslandMetrics.Surface = switch mode {
         case .idle: .idle
@@ -159,7 +163,7 @@ public final class IslandState: ObservableObject {
         hoverWork?.cancel()
         hoverExitWork?.cancel()
         guard mode != .expanded else { return }
-        let delay: TimeInterval = reduceMotion ? 0 : 0.18
+        let delay: TimeInterval = reduceMotion ? 0 : 0.16
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self, self.mode != .expanded else { return }
@@ -173,12 +177,9 @@ public final class IslandState: ObservableObject {
     public func hoverExited() {
         hoverWork?.cancel()
         hoverExitWork?.cancel()
-        // Hysteresis: the window shrinks under a stationary cursor on
-        // collapse, which re-fires exit at the boundary. A short delay —
-        // cancelled by any re-enter — breaks the enter/exit oscillation
-        // without making dismissal feel laggy.
+        // Un-hovering snaps back instantly without frame drops or oscillations.
         guard mode == .expanded, !pinned else { return }
-        let delay: TimeInterval = reduceMotion ? 0.05 : 0.28
+        let delay: TimeInterval = reduceMotion ? 0.02 : 0.10
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self, self.mode == .expanded, !self.pinned else { return }

@@ -47,6 +47,11 @@ public final class PowerEngine: ObservableObject {
 
     @objc private func woke(_: Notification) { refresh() }
 
+    public func stop() {
+        poll?.invalidate()
+        poll = nil
+    }
+
     public func refresh() {
         guard let info = PowerEngine.snapshot() else { return }
         percent = info.percent

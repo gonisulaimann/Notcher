@@ -5,10 +5,33 @@ import SwiftUI
 /// the canvas size and never resizes; the visible island is a shaped SwiftUI
 /// surface inside it (MorphShape), and clicks outside that shape fall through
 /// to whatever is beneath (shaped hit-testing in IslandController).
-public final class IslandPanel: NSPanel {
+/// Non-Activating AppKit Panel subclass for absolute hardware notch anchoring.
+/// Configured with .nonactivatingPanel, .fullScreenAuxiliary, and .status level.
+public class NotchWindowPanel: NSPanel {
     public var allowKey = false
     override public var canBecomeKey: Bool { allowKey }
     override public var canBecomeMain: Bool { false }
+}
+
+public typealias IslandPanel = NotchWindowPanel
+
+final class IslandHostingView<Content: View>: NSHostingView<Content> {
+    var menuProvider: (() -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        if let custom = menuProvider?() {
+            return custom
+        }
+        return super.menu(for: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if let menu = menuProvider?() {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        } else {
+            super.rightMouseDown(with: event)
+        }
+    }
 }
 
 /// Container that clips event delivery to the CURRENT morph shape: hits
@@ -19,6 +42,20 @@ public final class IslandPanel: NSPanel {
 final class ShapeHitView: NSView {
     /// Window-coordinates test, installed by the controller per present().
     var test: ((NSPoint) -> Bool)?
+    var menuProvider: (() -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuProvider?()
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if let menu = menuProvider?() {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        } else {
+            super.rightMouseDown(with: event)
+        }
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let test, test(point) else { return nil }
         return super.hitTest(point)
@@ -53,6 +90,8 @@ public final class IslandController {
 
     public var onOutsideClick: (() -> Void)?
     public var onEscape: (() -> Void)?
+    public var contextMenuProvider: (() -> NSMenu?)?
+    public var onScreenChanged: ((NotchGeometry.Layout) -> Void)?
 
     /// Whether the hover-exclusion scrim window is currently on screen.
     public var isScrimVisible: Bool { scrimVisible }
@@ -71,7 +110,7 @@ public final class IslandController {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.appearance = NSAppearance(named: .darkAqua)
-        panel.level = NSWindow.Level(rawValue: 26) // above menu bar, below popups
+        panel.level = NSWindow.Level(rawValue: 26) // status window level tier (above menu bar, below popups)
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
         panel.isMovable = false
@@ -92,10 +131,31 @@ public final class IslandController {
                 }
             }
         } as Any)
+        // Global panic exit listener: Cmd + Shift + Option + Esc
+        monitors.append(NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 && event.modifierFlags.contains([.command, .shift, .option]) {
+                Task { @MainActor in NSApp.terminate(nil) }
+            }
+        } as Any)
         monitors.append(NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // Panic exit: Cmd + Shift + Option + Esc
+            if event.keyCode == 53 && event.modifierFlags.contains([.command, .shift, .option]) {
+                NSApp.terminate(nil)
+                return nil
+            }
             if event.keyCode == 53 { // Escape
                 Task { @MainActor in self?.onEscape?() }
                 return nil
+            }
+            if event.modifierFlags.contains(.command) {
+                if event.charactersIgnoringModifiers == "q" {
+                    NSApp.terminate(nil)
+                    return nil
+                }
+                if event.charactersIgnoringModifiers == "w" {
+                    Task { @MainActor in self?.onEscape?() }
+                    return nil
+                }
             }
             return event
         } as Any)
@@ -105,16 +165,28 @@ public final class IslandController {
         for m in monitors { NSEvent.removeMonitor(m) }
     }
 
+    /// Explicit cleanup of event monitors and window resources
+    public func tearDown() {
+        for m in monitors { NSEvent.removeMonitor(m) }
+        monitors.removeAll()
+        scrim?.orderOut(nil)
+        scrim = nil
+        panel.orderOut(nil)
+    }
+
     // MARK: - Content
 
     /// Install the SwiftUI root (NSHostingView). Called once by the
     /// coordinator; the view reads island state and morphs itself.
     /// Wrapped in a ShapeHitView so only the live shape takes events.
     public func setRoot(_ view: some View) {
-        let hosting = NSHostingView(rootView: view)
+        let hosting = IslandHostingView(rootView: view)
         hosting.frame = NSRect(origin: .zero, size: IslandMetrics.canvasSize)
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         hosting.autoresizingMask = [.width, .height]
+        hosting.menuProvider = { [weak self] in
+            self?.contextMenuProvider?()
+        }
         let hit = ShapeHitView(frame: NSRect(origin: .zero, size: IslandMetrics.canvasSize))
         hit.autoresizingMask = [.width, .height]
         hit.addSubview(hosting)
@@ -122,6 +194,9 @@ public final class IslandController {
         hit.test = { [weak self] point in
             guard let self else { return false }
             return self.shapeContains(windowPoint: point, slop: 6)
+        }
+        hit.menuProvider = { [weak self] in
+            self?.contextMenuProvider?()
         }
         hitView = hit
         panel.contentView = hit
@@ -150,6 +225,7 @@ public final class IslandController {
 
     public func activateForInteraction() {
         panel.allowKey = true
+        panel.makeKey()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -166,7 +242,8 @@ public final class IslandController {
     private func placeCanvas() {
         let f = screen.frame
         let size = IslandMetrics.canvasSize
-        let x = f.midX - size.width / 2
+        let centerX = layout.hasNotch ? layout.housingRect.midX : f.midX
+        let x = (centerX - size.width / 2).rounded()
         let y = f.maxY - size.height
         panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
     }
@@ -179,6 +256,7 @@ public final class IslandController {
             self.placeCanvas()
             // Re-glue a visible scrim; setScrim re-places when already on.
             if self.scrimVisible { self.setScrim(true, animate: false) }
+            self.onScreenChanged?(self.layout)
         }
     }
 
@@ -243,7 +321,9 @@ public final class IslandController {
                     ctx.duration = 0.22
                     sc.animator().alphaValue = 0
                 }, completionHandler: { [weak sc] in
-                    sc?.orderOut(nil)
+                    MainActor.assumeIsolated {
+                        sc?.orderOut(nil)
+                    }
                 })
             } else {
                 sc.alphaValue = 0
@@ -254,7 +334,8 @@ public final class IslandController {
 
     private func scrimFrame() -> NSRect {
         let f = screen.frame
+        let centerX = layout.hasNotch ? layout.housingRect.midX : f.midX
         let w: CGFloat = 620, h: CGFloat = 620
-        return NSRect(x: f.midX - w / 2, y: f.maxY - h + 2, width: w, height: h)
+        return NSRect(x: (centerX - w / 2).rounded(), y: f.maxY - h + 2, width: w, height: h)
     }
 }

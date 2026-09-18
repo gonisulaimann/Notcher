@@ -581,6 +581,36 @@ struct Probe {
                   "hittest idle ignores deep canvas")
             check(IslandMetrics.hitTest(CGPoint(x: 220, y: 16), in: size, m: idle),
                   "hittest idle chin still catches notch taps")
+
+            // 2. AppKit view-level hit-test and context menu verification:
+            let ctl = IslandController()
+            ctl.setRoot(Text("Test Root"))
+            ctl.present(metrics: slab, expanded: false, allowKey: false)
+            let menu = NSMenu(title: "TestMenu")
+            menu.addItem(NSMenuItem(title: "Quit Notcher", action: nil, keyEquivalent: "q"))
+            ctl.contextMenuProvider = { menu }
+
+            // Inside slab (top-left y=76 in 594-height canvas -> bottom-left y=518)
+            let insidePt = NSPoint(x: 220, y: size.height - (32 + 20 + 24))
+            let hitInside = ctl.panel.contentView?.hitTest(insidePt)
+            check(hitInside != nil, "hittest inside shape returns view")
+            let dummyEvent = NSEvent.mouseEvent(with: .rightMouseDown,
+                                                location: insidePt,
+                                                modifierFlags: [],
+                                                timestamp: 0,
+                                                windowNumber: ctl.panel.windowNumber,
+                                                context: nil,
+                                                eventNumber: 0,
+                                                clickCount: 1,
+                                                pressure: 1.0)
+            let menuReturned = hitInside?.menu(for: dummyEvent ?? NSEvent())
+            check(menuReturned?.items.first?.title == "Quit Notcher", "hittest right-click menu resolved")
+
+            // Outside shape (bottom-left y=100 in 594-height canvas)
+            let outsidePt = NSPoint(x: 10, y: 100)
+            let hitOutside = ctl.panel.contentView?.hitTest(outsidePt)
+            check(hitOutside == nil, "hittest outside shape returns nil view")
+            ctl.tearDown()
         }
 
         /// New-sensor coverage (0.5.0 surfaces): clipboard acceptance table +

@@ -4,7 +4,7 @@ import Foundation
 /// environment; silent in normal runs. Used to hunt the flicker class of
 /// bugs: every state transition and every window operation is timestamped.
 public enum IslandDebug {
-    nonisolated(unsafe) private static let enabled: Bool = {
+    private static let enabled: Bool = {
         ProcessInfo.processInfo.environment["NOTCHER_DEBUG"] == "1"
     }()
 

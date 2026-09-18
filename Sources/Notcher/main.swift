@@ -12,7 +12,7 @@ NSApplication.shared.run()
 // MARK: - Coordinator
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var island = IslandState()
     private var timer = TimerEngine()
     private var media = MediaEngine()
@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboard = ClipboardEngine()
     private var hudEngine = HudEngine()
     private var privacy = PrivacyWatch()
+    private var watchdog: WatchdogEngine?
     private var controller: IslandController?
     private var statusItem: NSStatusItem?
     private var bag = Set<AnyCancellable>()
@@ -192,9 +193,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             harbor: harbor, link: link, center: center,
             clipboard: clipboard, hudEngine: hudEngine, privacy: privacy,
             layout: layout,
+            layoutProvider: { [weak ctl] in ctl?.notchLayout ?? layout },
             onDropFiles: { [weak self] urls in self?.dropFiles(urls) },
             onInteract: { [weak self] in self?.userInteracting() }
         ))
+        ctl.onScreenChanged = { [weak self] _ in
+            self?.requestRefresh()
+        }
         ctl.onOutsideClick = { [weak self] in
             guard let self, self.island.mode == .expanded, !self.island.pinned else { return }
             self.island.collapse()
@@ -206,6 +211,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 self.island.collapse()
             }
+        }
+        ctl.contextMenuProvider = { [weak self] in
+            self?.buildIslandContextMenu() ?? NSMenu()
         }
         ctl.orderFront()
 
@@ -312,10 +320,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                              text: "Timer: \(TimerFormat.string(timer.remaining)) left",
                              seconds: 5)
         }
+
+        watchdog = WatchdogEngine(maxLatencySeconds: 6.0, maxMemoryMB: 512, onTeardown: { [weak self] in
+            self?.controller?.tearDown()
+        })
+        watchdog?.start()
     }
 
     func applicationWillTerminate(_: Notification) {
+        watchdog?.stop()
         link.stop()
+        socket.stop()
+        clipboard.stop()
+        power.stop()
+        privacy.stop()
+        hudEngine.stop()
+        controller?.tearDown()
     }
 
     // MARK: - State resolution
@@ -363,21 +383,110 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Menu bar
-
+    // MARK: - Menu bar & Context Menu
+ 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "water.waves", accessibilityDescription: "Notcher")
         }
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Open Island", action: #selector(openIsland), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Start 25-minute Timer", action: #selector(quickTimer), keyEquivalent: ""))
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Notcher", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
-        for item in menu.items { item.target = self }
+        menu.delegate = self
         item.menu = menu
         statusItem = item
+        updateStatusMenu(menu)
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        updateStatusMenu(menu)
+    }
+
+    private func updateStatusMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let openTitle = (island.mode == .expanded) ? "Collapse Island" : "Open Island"
+        let openItem = NSMenuItem(title: openTitle, action: #selector(toggleIslandMode), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
+
+        let pinItem = NSMenuItem(title: "Keep on Top", action: #selector(togglePinState), keyEquivalent: "")
+        pinItem.target = self
+        pinItem.state = island.pinned ? .on : .off
+        menu.addItem(pinItem)
+
+        menu.addItem(.separator())
+
+        let timerItem = NSMenuItem(title: "Start 25-minute Timer", action: #selector(quickTimer), keyEquivalent: "")
+        timerItem.target = self
+        menu.addItem(timerItem)
+
+        let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        loginItem.target = self
+        loginItem.state = LaunchAtLogin.enabled ? .on : .off
+        menu.addItem(loginItem)
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: "Quit Notcher", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.keyEquivalentModifierMask = .command
+        quitItem.target = self
+        menu.addItem(quitItem)
+    }
+
+    private func buildIslandContextMenu() -> NSMenu {
+        let menu = NSMenu(title: "Notcher")
+        let toggleTitle = (island.mode == .expanded) ? "Collapse Island" : "Expand Island"
+        let toggleItem = NSMenuItem(title: toggleTitle, action: #selector(toggleIslandMode), keyEquivalent: "")
+        toggleItem.target = self
+        menu.addItem(toggleItem)
+
+        let pinItem = NSMenuItem(title: "Keep on Top", action: #selector(togglePinState), keyEquivalent: "")
+        pinItem.target = self
+        pinItem.state = island.pinned ? .on : .off
+        menu.addItem(pinItem)
+
+        menu.addItem(.separator())
+
+        let timerItem = NSMenuItem(title: "Start 25-minute Timer", action: #selector(quickTimer), keyEquivalent: "")
+        timerItem.target = self
+        menu.addItem(timerItem)
+
+        let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        loginItem.target = self
+        loginItem.state = LaunchAtLogin.enabled ? .on : .off
+        menu.addItem(loginItem)
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: "Quit Notcher", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.keyEquivalentModifierMask = .command
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        return menu
+    }
+
+    @objc private func toggleIslandMode() {
+        userInteracting()
+        if island.mode == .expanded {
+            island.collapse()
+        } else {
+            island.presentPinned()
+        }
+    }
+
+    @objc private func togglePinState() {
+        userInteracting()
+        island.togglePin()
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let next = !LaunchAtLogin.enabled
+        try? LaunchAtLogin.set(next)
+        island.loginEnabled = next
+    }
+
+    @objc private func quitApp() {
+        NSApp.terminate(nil)
     }
 
     @objc private func openIsland() {

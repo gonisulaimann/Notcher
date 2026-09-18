@@ -30,6 +30,11 @@ public final class PrivacyWatch: ObservableObject {
         poll = t
     }
 
+    public func stop() {
+        poll?.invalidate()
+        poll = nil
+    }
+
     public var privacyActive: Bool { cameraActive || micActive }
 
     private func scan() {

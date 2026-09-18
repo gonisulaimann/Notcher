@@ -81,32 +81,35 @@ struct SurfaceView: View {
 
     var body: some View {
         ZStack {
-            // 1. Base Apple Vibrancy Glass (.ultraThinMaterial)
-            VisualEffect(material: .popover)
+            // 1. Native Apple Vibrancy Glass (.ultraThinMaterial)
+            Rectangle()
+                .fill(.ultraThinMaterial)
 
-            // 2. Translucent Liquid Glass Dark Gradient (allows wallpaper colors & light to refract through)
+            // 2. Hardware notch seamless black bleed: anchors to physical housing bezel
             LinearGradient(
-                colors: [
-                    Color(red: 0.08, green: 0.08, blue: 0.10).opacity(0.82),
-                    Color(red: 0.03, green: 0.03, blue: 0.04).opacity(0.88)
+                stops: [
+                    .init(color: .black, location: 0.0),
+                    .init(color: .black.opacity(0.96), location: 0.22),
+                    .init(color: Color(red: 0.08, green: 0.08, blue: 0.10).opacity(0.82), location: 0.55),
+                    .init(color: Color(red: 0.03, green: 0.03, blue: 0.04).opacity(0.88), location: 1.0)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
 
-            // 3. Drop target ambient illumination wash
+            // 3. Drop target ambient illumination wash (subtle, non-jarring)
             if dropTarget {
                 LinearGradient(
-                    colors: [Color.orange.opacity(0.26), Color.orange.opacity(0.05)],
+                    colors: [Color.orange.opacity(0.20), Color.orange.opacity(0.04)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
             }
 
-            // 4. Charging surge dynamic energy wash
+            // 4. Charging surge dynamic energy wash (subtle Apple mint, strictly no jarring neon)
             if isCharging {
                 LinearGradient(
-                    colors: [Color.green.opacity(0.18), Color.cyan.opacity(0.08), Color.clear],
+                    colors: [Color.green.opacity(0.12), Color.teal.opacity(0.05), Color.clear],
                     startPoint: .bottom,
                     endPoint: .top
                 )
@@ -115,7 +118,7 @@ struct SurfaceView: View {
             // 5. Low battery warning subtle breath wash
             if isLowBattery {
                 LinearGradient(
-                    colors: [Color.red.opacity(0.18), Color.orange.opacity(0.06), Color.clear],
+                    colors: [Color.red.opacity(0.14), Color.orange.opacity(0.04), Color.clear],
                     startPoint: .bottom,
                     endPoint: .top
                 )
@@ -123,40 +126,31 @@ struct SurfaceView: View {
         }
         .mask(MorphShape(m: metrics))
         .overlay(
-            // 6. Directional specular rim highlight:
-            // Top is Color.clear so the surface fuses with the camera housing without a dividing seam.
-            // Bottom edge has subtle specular glass catch.
+            // 6. Subtle inner borders & dynamic desktop-adaptive specular highlights:
+            // Top edge is Color.clear to fuse with the hardware notch without seams or dividing borders.
+            // Rim has subtle 15% white opacity inner border with hover specular catch.
             MorphShape(m: metrics)
                 .stroke(
                     dropTarget
-                        ? AnyShapeStyle(Color.orange.opacity(0.90))
-                        : isCharging
-                            ? AnyShapeStyle(
-                                LinearGradient(
-                                    colors: [Color.clear, Color.green.opacity(0.35), Color.green.opacity(0.85)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
+                        ? AnyShapeStyle(Color.orange.opacity(0.75))
+                        : AnyShapeStyle(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .clear, location: 0.0),
+                                    .init(color: .clear, location: 0.12),
+                                    .init(color: Color.white.opacity(0.06), location: 0.40),
+                                    .init(color: Color.white.opacity(pointerInside ? 0.22 : 0.15), location: 1.0)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
                             )
-                            : AnyShapeStyle(
-                                LinearGradient(
-                                    colors: [
-                                        Color.clear,
-                                        Color.white.opacity(0.05),
-                                        Color.white.opacity(pointerInside ? 0.24 : 0.16)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            ),
-                    lineWidth: (dropTarget || isCharging) ? 1.5 : 0.75
+                        ),
+                    lineWidth: dropTarget ? 1.5 : 0.75
                 )
                 .allowsHitTesting(false)
         )
-        // 7. Multi-tier cohesive ambient grounding shadow beneath the island
-        .shadow(color: .black.opacity(expanded ? 0.40 : 0.28),
-                radius: expanded ? 22 : 12,
-                y: expanded ? 10 : 5)
+        // 7. Subtle drop shadow: radius 12, y: 6 with black 20% opacity
+        .shadow(color: Color.black.opacity(0.20), radius: 12, x: 0, y: 6)
     }
 }
 
@@ -174,6 +168,7 @@ public struct IslandRootView: View {
     @ObservedObject var hudEngine: HudEngine
     @ObservedObject var privacy: PrivacyWatch
     var layout: NotchGeometry.Layout
+    var layoutProvider: (() -> NotchGeometry.Layout)?
     var onDropFiles: ([URL]) -> Void
     var onInteract: () -> Void
 
@@ -182,6 +177,7 @@ public struct IslandRootView: View {
                 center: ExternalCenter, clipboard: ClipboardEngine,
                 hudEngine: HudEngine, privacy: PrivacyWatch,
                 layout: NotchGeometry.Layout,
+                layoutProvider: (() -> NotchGeometry.Layout)? = nil,
                 onDropFiles: @escaping ([URL]) -> Void,
                 onInteract: @escaping () -> Void = {}) {
         self.island = island
@@ -195,18 +191,20 @@ public struct IslandRootView: View {
         self.hudEngine = hudEngine
         self.privacy = privacy
         self.layout = layout
+        self.layoutProvider = layoutProvider
         self.onDropFiles = onDropFiles
         self.onInteract = onInteract
+    }
+
+    private var currentLayout: NotchGeometry.Layout {
+        layoutProvider?() ?? layout
     }
 
     /// The island's single source of shape truth, recomputed on every state
     /// change; SwiftUI animates the MorphShape between them (one continuous
     /// spring interpolation — the whole transition).
     private var metrics: IslandMetrics {
-        if island.mode == .compact, island.flash != nil {
-            return IslandMetrics.compactSlim(layout)
-        }
-        return island.surfaceMetrics(layout: layout)
+        island.surfaceMetrics(layout: currentLayout)
     }
 
     public var body: some View {
@@ -263,13 +261,17 @@ public struct IslandRootView: View {
                          harbor: harbor, link: link, center: center,
                          clipboard: clipboard, hudEngine: hudEngine,
                          privacy: privacy, onInteract: onInteract)
-                .frame(width: metrics.width, height: metrics.bodyH)
+                .frame(width: metrics.width, height: metrics.bodyH, alignment: .top)
                 .padding(.top, metrics.contentTop)
-                .transition(.opacity)
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .top)),
+                    removal: .opacity
+                ))
         } else {
             compactContent
-                .frame(width: metrics.width, height: metrics.bodyH)
+                .frame(width: metrics.width, height: metrics.bodyH, alignment: .top)
                 .padding(.top, metrics.contentTop)
+                .transition(.opacity)
         }
         // Privacy sensors always visible when active.
         if privacy.privacyActive {
@@ -860,6 +862,17 @@ struct ExpandedView: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
         }
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .white, location: 0.0),
+                    .init(color: .white, location: 0.90),
+                    .init(color: .white.opacity(0.0), location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
         .onTapGesture { onInteract() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1192,6 +1205,7 @@ struct ClipboardPanel: View {
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .onDrag { NSItemProvider(object: NSString(string: entry.text)) }
                         }
                     }
                     .padding(.vertical, 2)
@@ -1249,8 +1263,53 @@ struct QuickTogglesPanel: View {
                         set: { try? LaunchAtLogin.set($0) }
                     )
                 )
+
+                audioOutputRow
             }
         }
+    }
+
+    private var audioOutputRow: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.purple.opacity(0.20))
+                Image(systemName: "airpodspro")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.purple)
+            }
+            .frame(width: 26, height: 26)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Audio Output")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("System Speakers / AirPods")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+
+            Spacer()
+
+            Button(action: {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension")!)
+            }) {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 9))
+                    Text("Switch")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.10), in: Capsule())
+                .foregroundStyle(.white.opacity(0.90))
+            }
+            .buttonStyle(PressableButtonStyle())
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func toggleRow(icon: String, color: Color, title: String, subtitle: String, isOn: Binding<Bool>) -> some View {
@@ -2388,4 +2447,51 @@ public enum TimerFormat {
 /// between updates is extrapolated locally (never below zero).
 public func liveRemaining(base: Double, updatedAt: Date, now: Date) -> Double {
     max(0, base - now.timeIntervalSince(updatedAt))
+}
+
+// MARK: - Liquid Glass View Modifier
+
+/// Metal / CoreAnimation-backed view modifier handling liquid glass material,
+/// inner gradient border, drop shadows, and edge vignette blending.
+public struct LiquidGlassModifier: ViewModifier {
+    public let metrics: IslandMetrics
+    public var dropTarget: Bool = false
+    public var isCharging: Bool = false
+    public var isLowBattery: Bool = false
+    public var pointerInside: Bool = false
+
+    public func body(content: Content) -> some View {
+        content
+            .background(
+                SurfaceView(
+                    metrics: metrics,
+                    strokeStyle: AnyShapeStyle(Color.white.opacity(0.15)),
+                    strokeWidth: 0.75,
+                    expanded: metrics.bodyH > 60,
+                    dropTarget: dropTarget,
+                    pointerInside: pointerInside,
+                    isCharging: isCharging,
+                    isLowBattery: isLowBattery
+                )
+            )
+            .clipShape(MorphShape(m: metrics))
+    }
+}
+
+public extension View {
+    func liquidGlass(
+        metrics: IslandMetrics,
+        dropTarget: Bool = false,
+        isCharging: Bool = false,
+        isLowBattery: Bool = false,
+        pointerInside: Bool = false
+    ) -> some View {
+        modifier(LiquidGlassModifier(
+            metrics: metrics,
+            dropTarget: dropTarget,
+            isCharging: isCharging,
+            isLowBattery: isLowBattery,
+            pointerInside: pointerInside
+        ))
+    }
 }

@@ -46,7 +46,8 @@ let package = Package(
         .executableTarget(
             name: "NotcherProbe",
             dependencies: ["NotcherKit", "LinkCore"],
-            path: "Probe"
+            path: "Probe",
+            exclude: ["README.md"]
         ),
         // Self-test harness (plain executable: CLT ships neither XCTest nor
         // the swift-testing macro plugin, so `swift test` cannot link here).

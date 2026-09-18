@@ -64,6 +64,15 @@ public final class HudEngine: ObservableObject {
         enabled = on
     }
 
+    public func stop() {
+        volumeEmitWork?.cancel()
+        brightEmitWork?.cancel()
+        if deviceID != 0 && listenersInstalled {
+            removeListeners(from: deviceID)
+            listenersInstalled = false
+        }
+    }
+
     // MARK: - Device plumbing
 
     private func refreshDevice() {
