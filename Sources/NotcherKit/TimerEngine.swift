@@ -86,6 +86,17 @@ public final class TimerEngine: ObservableObject {
         onChanged?()
     }
 
+    public func addTime(seconds: TimeInterval) {
+        guard isActive else { return }
+        total += seconds
+        remaining += seconds
+        if state == .running, let d = deadline {
+            deadline = d.addingTimeInterval(seconds)
+        }
+        persist()
+        onChanged?()
+    }
+
     private func scheduleTick() {
         let t = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.update() }

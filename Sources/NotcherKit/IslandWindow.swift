@@ -216,7 +216,7 @@ public final class IslandController {
                 sc = NSPanel(contentRect: scrimFrame(), styleMask: .borderless,
                              backing: .buffered, defer: false)
                 sc.isOpaque = false
-                sc.backgroundColor = NSColor(calibratedWhite: 0, alpha: 0.32)
+                sc.backgroundColor = .clear
                 sc.hasShadow = false
                 sc.level = NSWindow.Level(rawValue: 25)
                 sc.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]

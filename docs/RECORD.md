@@ -784,3 +784,41 @@ Full design and interaction overhaul to elevate Notcher from a functional protot
   - SHA256: `722eda49599d53ce12596dd6da9f7334268413005f6cf5d046894b2ed00bc5b5`
   - Verified mounted and bundle-checked cleanly on macOS 27.2 beta.
 
+## Phase 10: 0.6.1 — Living Notch Hardware Fusion (The Anti-Pointer Rebuild)
+
+### Critical Diagnosis of Design Failure
+
+A deep forensic inspection of the live running application (`media_1789707938234.png`) on the owner's MacBook Air M4 revealed four severe design flaws that made Notcher look like a floating pointer/dashboard rather than a living notch:
+
+1. **The "Pointer" / Bottle-Cap Neck**:
+   - In `expanded`, `chinW` was constrained to `layout.notchWidth + 24` (~203pt) while `width` was 440pt, creating a 200px narrow neck sticking up with horizontal shoulders splaying out under the menu bar. This made the island read as an arrow pointing up at the notch rather than the notch itself.
+   - **Fix**: Rebuilt `IslandMetrics.path` as a pure unified squircle anchored directly to the top screen bezel (`y = 0`) spanning the full width of the island (`chinW == width`, `shoulder == 0`). Zero neck, zero shoulders, zero pointer effect.
+
+2. **The 620×620 Grey Scrim Box**:
+   - `IslandController.setScrim` created a 620×620 NSPanel with `backgroundColor = NSColor(calibratedWhite: 0, alpha: 0.32)` hanging from the top center of the display, drawing an ugly dark square across the wallpaper behind the island.
+   - **Fix**: Set `sc.backgroundColor = .clear`. The panel is 100% transparent; the grey box is permanently eliminated while maintaining probe compatibility.
+
+3. **Monolithic 486pt Settings Dashboard Dump**:
+   - When expanded, Notcher previously stacked 5 different cards inside an unconstrained vertical `ScrollView`: Now Playing, Harbor, iPhone Link code, Waterline access toggles, and System preferences (4 switches + quit button), occupying half the MacBook screen with generic settings controls.
+   - **Fix**: Replaced the dashboard with an intimate, non-scrolling 152pt contextual surface benchmarked to Droppy. It presents **exactly one** hero surface based on current context:
+     - Media active: Now Playing (artwork, waveform, scrubber, transport controls).
+     - Timer active: Focus Timer (digits, progress, controls, +1m/+5m chips).
+     - Harbor active: Parked file shelf with native drag-out (`.onDrag`).
+     - Standby (idle): Harbor drop target + 1-tap focus chips (`25m`, `15m`, `5m`).
+     - Preferences: Accessed on demand via a discrete gear button in the header.
+
+4. **White Dividing Stroke at Bezel**:
+   - `SurfaceView` previously drew a white crest line and white rim stroke across the top edge, visually severing the island from the black camera housing.
+   - **Fix**: Directional highlight stroke — `Color.clear` at the top bezel (fuses seamlessly with the notch glass) and subtle `Color.white.opacity(0.14)` along the bottom squircle edge.
+
+### Verification Matrix (100% Green)
+
+- `NotcherProbe hittest`: 8/8 PASS
+- `NotcherProbe stress`: 12/12 PASS
+- `NotcherProbe sensors`: 12/12 PASS
+- `NotcherProbe godmode`: 8/8 PASS
+- `NotcherProbe overlap`: 6/6 PASS
+- `LinkSelfTest`: 8/8 PASS
+- `IslandSnapshot`: 10/10 verified offscreen renders (zero neck, zero scrim box, crisp Apple squircle silhouette).
+
+

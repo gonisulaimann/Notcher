@@ -82,11 +82,11 @@ struct SurfaceView: View {
             // 1. Base Apple Vibrancy Glass
             VisualEffect(material: .popover)
 
-            // 2. Luminous dark tonal gradient (Apple Liquid Glass depth)
+            // 2. Pure dark tonal gradient matching the notch glass (OLED-grade black)
             LinearGradient(
                 colors: [
-                    Color(red: 0.08, green: 0.08, blue: 0.10).opacity(0.70),
-                    Color(red: 0.03, green: 0.03, blue: 0.04).opacity(0.85)
+                    Color(red: 0.05, green: 0.05, blue: 0.06).opacity(0.96),
+                    Color(red: 0.02, green: 0.02, blue: 0.03).opacity(0.98)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -100,45 +100,35 @@ struct SurfaceView: View {
                     endPoint: .bottom
                 )
             }
-
-            // 4. Subtle top crest reflection line
-            LinearGradient(
-                colors: [Color.white.opacity(0.35), Color.white.opacity(0.08), Color.clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 3)
-            .frame(maxHeight: .infinity, alignment: .top)
         }
         .mask(MorphShape(m: metrics))
         .overlay(
-            // 5. Specular rim light with directional gradient
+            // 4. Directional specular rim highlight:
+            // CRITICAL: Top is Color.clear so the surface unites with the camera housing without a dividing line.
+            // Bottom edge has a subtle glass rim catch.
             MorphShape(m: metrics)
                 .stroke(
                     dropTarget
-                        ? AnyShapeStyle(Color.orange.opacity(0.92))
+                        ? AnyShapeStyle(Color.orange.opacity(0.90))
                         : AnyShapeStyle(
                             LinearGradient(
                                 colors: [
-                                    Color.white.opacity(pointerInside ? 0.38 : 0.26),
-                                    Color.white.opacity(pointerInside ? 0.18 : 0.10),
-                                    Color.white.opacity(0.04)
+                                    Color.clear,
+                                    Color.white.opacity(0.04),
+                                    Color.white.opacity(pointerInside ? 0.20 : 0.12)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         ),
-                    lineWidth: dropTarget ? 2 : 1
+                    lineWidth: dropTarget ? 1.5 : 0.75
                 )
                 .allowsHitTesting(false)
         )
-        // 6. Dual-stage depth shadows
-        .shadow(color: .black.opacity(expanded ? 0.35 : 0.25),
-                radius: expanded ? 8 : 5,
-                y: expanded ? 4 : 2)
-        .shadow(color: .black.opacity(expanded ? 0.45 : 0.32),
-                radius: expanded ? 28 : 16,
-                y: expanded ? 12 : 6)
+        // 5. Cohesive ambient grounding shadow beneath the island
+        .shadow(color: .black.opacity(expanded ? 0.38 : 0.25),
+                radius: expanded ? 18 : 10,
+                y: expanded ? 8 : 4)
     }
 }
 
@@ -655,47 +645,27 @@ struct ExpandedView: View {
     @ObservedObject var privacy: PrivacyWatch
     var onInteract: () -> Void
 
+    @State private var showingPreferences = false
+
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
-                .background(
-                    LinearGradient(
-                        colors: [.clear, .white.opacity(0.12), .clear],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 10) {
-                    // 1. Hero contextual surface
-                    if media.appName != nil {
-                        NowPlayingSection(media: media)
-                    }
-                    if timer.isActive || timer.state == .done {
-                        TimerSection(timer: timer)
-                    } else if media.appName == nil {
-                        QuickFocusSection(timer: timer)
-                    }
-
-                    // 2. Harbor File Shelf with direct drag-out
-                    HarborSection(harbor: harbor)
-
-                    // 3. Quick Hub (Clipboard & iPhone Link)
-                    if clipboard.enabled || link.enabled {
-                        QuickHubSection(clipboard: clipboard, link: link)
-                    }
-
-                    // 4. Waterline external access (if any)
-                    AccessSection(center: center)
-
-                    // 5. System, Preferences & Controls
-                    SystemSection(island: island, hudEngine: hudEngine, clipboard: clipboard, link: link)
+            Group {
+                if showingPreferences {
+                    preferencesView
+                } else if media.appName != nil {
+                    NowPlayingExpanded(media: media)
+                } else if timer.isActive || timer.state == .done {
+                    TimerExpanded(timer: timer)
+                } else if !harbor.items.isEmpty {
+                    HarborExpanded(harbor: harbor)
+                } else {
+                    StandbyExpanded(harbor: harbor, timer: timer)
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 14)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 8)
         }
         .onTapGesture { onInteract() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -703,73 +673,342 @@ struct ExpandedView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Image(systemName: "water.waves")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [IslandPalette.external, IslandPalette.timer],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(IslandPalette.external)
                 Text("Notcher")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
             }
 
             Spacer()
 
             if privacy.privacyActive {
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     Circle()
                         .fill(privacy.cameraActive ? Color(red: 0.35, green: 0.82, blue: 1.0) : .orange)
-                        .frame(width: 6, height: 6)
-                    Text(privacy.cameraActive && privacy.micActive ? "cam · mic" : (privacy.cameraActive ? "camera" : "mic"))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .frame(width: 5, height: 5)
+                    Text(privacy.cameraActive && privacy.micActive ? "cam·mic" : (privacy.cameraActive ? "cam" : "mic"))
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.80))
                 }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
                 .background(.white.opacity(0.08), in: Capsule())
             }
 
             if let p = power.percent {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     Image(systemName: power.charging ? "bolt.fill" : "battery.75")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(power.charging ? .green : .white.opacity(0.85))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(power.charging ? .green : .white.opacity(0.80))
                     Text("\(Int(p))%")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.85))
+                        .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.80))
                 }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
                 .background(.white.opacity(0.08), in: Capsule())
             }
 
+            Button(action: { showingPreferences.toggle() }) {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(showingPreferences ? .orange : .white.opacity(0.60))
+                    .frame(width: 22, height: 22)
+                    .background(.white.opacity(showingPreferences ? 0.16 : 0.05), in: Circle())
+            }
+            .buttonStyle(PressableButtonStyle())
+            .accessibilityLabel("Preferences")
+
             Button(action: { island.togglePin() }) {
                 Image(systemName: island.pinned ? "pin.fill" : "pin")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(island.pinned ? .orange : .white.opacity(0.70))
-                    .frame(width: 26, height: 26)
-                    .background(.white.opacity(island.pinned ? 0.16 : 0.06), in: Circle())
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(island.pinned ? .orange : .white.opacity(0.60))
+                    .frame(width: 22, height: 22)
+                    .background(.white.opacity(island.pinned ? 0.16 : 0.05), in: Circle())
             }
             .buttonStyle(PressableButtonStyle())
             .accessibilityLabel(island.pinned ? "Unpin island" : "Pin island open")
 
             Button(action: { island.collapse() }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.70))
-                    .frame(width: 26, height: 26)
-                    .background(.white.opacity(0.06), in: Circle())
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.60))
+                    .frame(width: 22, height: 22)
+                    .background(.white.opacity(0.05), in: Circle())
             }
             .buttonStyle(PressableButtonStyle())
             .accessibilityLabel("Collapse island")
         }
         .padding(.horizontal, 14)
-        .frame(height: 42)
+        .frame(height: 32)
+    }
+
+    private var preferencesView: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("PREFERENCES")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.50))
+                    .tracking(0.5)
+                Spacer()
+                Button("Done") { showingPreferences = false }
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.orange)
+            }
+
+            VStack(spacing: 6) {
+                Toggle("Volume HUD at notch", isOn: Binding(
+                    get: { hudEngine.enabled },
+                    set: { hudEngine.setEnabled($0) }
+                ))
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.85))
+                .toggleStyle(.switch)
+                .tint(.orange)
+
+                Toggle("Clipboard history shelf", isOn: Binding(
+                    get: { clipboard.enabled },
+                    set: { clipboard.setEnabled($0) }
+                ))
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.85))
+                .toggleStyle(.switch)
+                .tint(IslandPalette.clipboard)
+
+                Toggle("Open at Login", isOn: Binding(
+                    get: { LaunchAtLogin.enabled },
+                    set: { try? LaunchAtLogin.set($0) }
+                ))
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.85))
+                .toggleStyle(.switch)
+                .tint(.orange)
+            }
+        }
+    }
+}
+
+// MARK: - Contextual Hero Surfaces
+
+struct NowPlayingExpanded: View {
+    @ObservedObject var media: MediaEngine
+    @State private var isStarred = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 12) {
+                ArtworkView(url: media.artworkURL, data: media.artworkData)
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(media.title ?? "Unknown track")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .tracking(-0.2)
+                            .lineLimit(1)
+                        if media.playing {
+                            WaveformIndicator(isPlaying: true, color: IslandPalette.media)
+                        }
+                    }
+                    Text([media.artist, media.appName].compactMap { $0 }.joined(separator: " · "))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.60))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+            }
+
+            // Scrub Bar
+            VStack(spacing: 2) {
+                Meter(value: media.progressFraction, color: IslandPalette.media, height: 3.5)
+                HStack {
+                    Text(media.positionText)
+                        .font(.system(size: 9, weight: .medium, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.45))
+                    Spacer()
+                    Text(media.durationText)
+                        .font(.system(size: 9, weight: .medium, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+            }
+
+            // Transport Controls
+            HStack(spacing: 16) {
+                Button(action: { isStarred.toggle() }) {
+                    Image(systemName: isStarred ? "star.fill" : "star")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(isStarred ? Color.yellow : Color.white.opacity(0.50))
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityLabel("Favorite")
+
+                Spacer()
+
+                TrayIconButton(system: "backward.fill", label: "Previous track", action: media.previous)
+                TrayIconButton(system: media.playing ? "pause.fill" : "play.fill",
+                               label: media.playing ? "Pause" : "Play",
+                               prominent: true,
+                               size: 28,
+                               action: media.playPause)
+                TrayIconButton(system: "forward.fill", label: "Next track", action: media.next)
+
+                Spacer()
+
+                Image(systemName: "airplayaudio")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.40))
+                    .accessibilityLabel("AirPlay output")
+            }
+            .padding(.horizontal, 8)
+        }
+    }
+}
+
+struct TimerExpanded: View {
+    @ObservedObject var timer: TimerEngine
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text(TimerFormat.string(timer.remaining))
+                    .font(.system(size: 28, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 1) {
+                    if !timer.label.isEmpty {
+                        Text(timer.label)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.70))
+                            .lineLimit(1)
+                    }
+                    Text(timer.state == .done ? "Done" : (timer.state == .paused ? "Paused" : "Focus"))
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(IslandPalette.timer)
+                }
+            }
+
+            Meter(value: timer.progress, color: IslandPalette.timer, height: 4)
+
+            HStack(spacing: 8) {
+                if timer.state == .running {
+                    TrayButton(title: "Pause", action: timer.pause)
+                } else if timer.state == .paused {
+                    TrayButton(title: "Resume", action: timer.resume)
+                } else if timer.state == .done {
+                    TrayButton(title: "Done", action: timer.cancel)
+                }
+                TrayButton(title: "Cancel", action: timer.cancel)
+
+                Spacer()
+
+                Button("+1m") { timer.addTime(seconds: 60) }
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.80))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.white.opacity(0.08), in: Capsule())
+                    .buttonStyle(PressableButtonStyle())
+
+                Button("+5m") { timer.addTime(seconds: 300) }
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.80))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.white.opacity(0.08), in: Capsule())
+                    .buttonStyle(PressableButtonStyle())
+            }
+        }
+    }
+}
+
+struct HarborExpanded: View {
+    @ObservedObject var harbor: HarborStore
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text("HARBOR SHELF")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .tracking(0.5)
+                Spacer()
+                Text("\(harbor.count) parked · drag out to use")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.white.opacity(0.40))
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(harbor.items) { item in
+                        HarborItemTile(item: item, harbor: harbor)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+}
+
+struct StandbyExpanded: View {
+    @ObservedObject var harbor: HarborStore
+    @ObservedObject var timer: TimerEngine
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "tray.and.arrow.down")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(IslandPalette.transfer)
+                Text("Drop files onto the notch to park them")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.70))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            )
+
+            HStack(spacing: 8) {
+                Text("FOCUS")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.40))
+                    .tracking(0.5)
+
+                Spacer()
+
+                Button("25m") { timer.start(seconds: 25 * 60, label: "Focus") }
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(IslandPalette.timer.opacity(0.20), in: Capsule())
+                    .buttonStyle(PressableButtonStyle())
+
+                Button("15m") { timer.start(seconds: 15 * 60, label: "Short") }
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(.white.opacity(0.08), in: Capsule())
+                    .buttonStyle(PressableButtonStyle())
+
+                Button("5m") { timer.start(seconds: 5 * 60, label: "Break") }
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(.white.opacity(0.08), in: Capsule())
+                    .buttonStyle(PressableButtonStyle())
+            }
+        }
     }
 }
 
