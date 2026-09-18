@@ -22,4 +22,8 @@ public enum FirstRun {
     }
 
     public static let didRunKey = "didFirstRunV1"
+    /// Godmode watermark: fresh key so the overture plays exactly once per
+    /// install lineage — including for upgraders (one delightful moment,
+    /// skippable, never repeated). The V1 key is retired, left unread.
+    public static let overtureKey = "didFirstRunV2"
 }

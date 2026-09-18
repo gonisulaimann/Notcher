@@ -230,9 +230,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// launch never reaches code).
     private func firstRunMoment() {
         let translocated = FirstRun.isTranslocated(bundlePath: Bundle.main.bundlePath)
-        let didRun = UserDefaults.standard.bool(forKey: FirstRun.didRunKey)
+        let didRun = UserDefaults.standard.bool(forKey: FirstRun.overtureKey)
         guard let action = FirstRun.plan(translocated: translocated, didRun: didRun) else { return }
-        UserDefaults.standard.set(true, forKey: FirstRun.didRunKey)
+        UserDefaults.standard.set(true, forKey: FirstRun.overtureKey)
         switch action {
         case .overture:
             startOverture()

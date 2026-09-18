@@ -15,6 +15,8 @@ swift run NotcherProbe firstrun                 # first-run decision matrix
 swift run NotcherProbe godmode                  # overture beats + live run
 swift run NotcherProbe overlap                  # scrim lifecycle + z-order vs crowders
 swift run NotcherProbe external                 # consent/TTL/eviction/priority/revocation
+swift run NotcherProbe socket                   # loopback socket vs live server
+swift run NotcherProbe shotwatch                # desktop PNG parks in Harbor (live app)
 swift run NotcherProbe reconnect                # kill + re-establish session
 swift run NotcherProbe cleanup                  # delete probe artifacts from live inbox
 ```
