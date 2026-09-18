@@ -1201,11 +1201,12 @@ struct AsyncArtwork: View {
     }
 }
 
-final class ArtworkCache: @unchecked Sendable {
-    static let shared = ArtworkCache()
+/// Image cache for album art (public for probe round-trip coverage).
+public final class ArtworkCache: @unchecked Sendable {
+    public static let shared = ArtworkCache()
     private var cache: [URL: NSImage] = [:]
     private let lock = NSLock()
-    subscript(url: URL) -> NSImage? {
+    public subscript(url: URL) -> NSImage? {
         get { lock.withLock { cache[url] } }
         set { lock.withLock { cache[url] = newValue } }
     }

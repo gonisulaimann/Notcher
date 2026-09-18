@@ -33,7 +33,7 @@ import SwiftUI
 //   MainActor.assumeIsolated + RunLoop.main.run pumps. No Task, no await.
 let probeMode = CommandLine.arguments.count >= 2 ? CommandLine.arguments[1] : ""
 switch probeMode {
-case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "overlap", "external", "socket", "hittest":
+case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "overlap", "external", "socket", "hittest", "sensors":
     MainActor.assumeIsolated {
         switch probeMode {
         case "stress": Probe.StressSync.runStress()
@@ -45,6 +45,7 @@ case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "ove
         case "external": Probe.StressSync.runExternal()
         case "socket": Probe.StressSync.runSocket()
         case "hittest": Probe.StressSync.runHitTest()
+        case "sensors": Probe.StressSync.runSensors()
         default: Probe.StressSync.runNaming()
         }
     }
@@ -580,6 +581,57 @@ struct Probe {
                   "hittest idle ignores deep canvas")
             check(IslandMetrics.hitTest(CGPoint(x: 220, y: 16), in: size, m: idle),
                   "hittest idle chin still catches notch taps")
+        }
+
+        /// New-sensor coverage (0.5.0 surfaces): clipboard acceptance table +
+        /// live round-trip with pasteboard save/restore, HUD read-only paths,
+        /// brightness-unsupported fallback, privacy readers, artwork cache.
+        static func runSensors() {
+            // 1. Acceptance table (pure).
+            check(ClipboardEngine.shouldCapture(text: nil, lastText: "", secondsSinceLast: 9) == false,
+                  "sensors nil text rejected")
+            check(ClipboardEngine.shouldCapture(text: "   \n ", lastText: "", secondsSinceLast: 9) == false,
+                  "sensors blank text rejected")
+            check(ClipboardEngine.shouldCapture(text: "hello", lastText: "", secondsSinceLast: 9) == true,
+                  "sensors real text accepted")
+            check(ClipboardEngine.shouldCapture(text: "x", lastText: "x", secondsSinceLast: 0.1) == false,
+                  "sensors machine double-copy deduped")
+            check(ClipboardEngine.shouldCapture(text: "x", lastText: "x", secondsSinceLast: 5) == true,
+                  "sensors genuine re-copy accepted")
+            // 2. Live round-trip: save the user's clipboard, capture a probe
+            // string end to end, then restore byte-for-byte.
+            let pb = NSPasteboard.general
+            let saved = pb.string(forType: .string)
+            let engine = ClipboardEngine()
+            engine.setEnabled(true)
+            pb.declareTypes([.string], owner: nil)
+            pb.setString("notcher-probe-clip", forType: .string)
+            RunLoop.main.run(until: Date().addingTimeInterval(1.5))
+            let captured = engine.entries.first?.text == "notcher-probe-clip"
+            engine.setEnabled(false)
+            let cleared = engine.entries.isEmpty
+            pb.declareTypes([.string], owner: nil)
+            if let saved { pb.setString(saved, forType: .string) }
+            check(captured, "sensors live clipboard capture")
+            check(cleared, "sensors disable clears memory")
+            check(pb.string(forType: .string) == saved, "sensors clipboard restored")
+            // 3. HUD read-only paths (never touch the user's volume).
+            let hud = HudEngine()
+            check((0...1).contains(hud.volume), "sensors volume in range (\(hud.volume))")
+            check(hud.brightnessSupported == false && HudEngine.readBrightness() == nil,
+                  "sensors brightness unsupported here (honest fallback)")
+            // 4. Privacy readers run without crashing; record, don't assert
+            // state (the user may legitimately be on a call).
+            let cam = PrivacyWatch.cameraInUse()
+            let mic = PrivacyWatch.micInUse()
+            print("sensors privacy now: camera=\(cam) mic=\(mic)")
+            check(true, "sensors privacy readers execute")
+            // 5. Artwork cache round-trip.
+            let url = URL(string: "https://example.invalid/a.jpg")!
+            let img = NSImage(size: NSSize(width: 4, height: 4))
+            ArtworkCache.shared[url] = img
+            check(ArtworkCache.shared[url] != nil, "sensors artwork cache round-trip")
+            ArtworkCache.shared[url] = nil
         }
 
         /// First-run decision matrix: translocated always guides (even repeat launches), normal first launch plays the overture once, afterwards silence.
