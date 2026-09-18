@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var link = LinkHost()
     private var center = ExternalCenter()
     private var shots = ShotWatch()
+    private var socket = SocketServer()
     private var controller: IslandController?
     private var statusItem: NSStatusItem?
     private var bag = Set<AnyCancellable>()
@@ -187,6 +188,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupStatusItem()
         registerURLHandler()
+        socket.onIntent = { [weak self] intent in
+            Task { @MainActor in
+                guard let self else { return }
+                switch intent {
+                case .push(let activity):
+                    self.center.submit(activity)
+                case .clearID(let id):
+                    self.center.clear(id: id)
+                case .clearSender(let prefix):
+                    self.center.clearMatching(prefix: prefix)
+                }
+                self.engineChanged()
+            }
+        }
+        socket.start()
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(systemDidWake(_:)),
@@ -428,9 +444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // one sender can only ever clear its own activities.
             let sender = senderIdentity()
             if let id = q("id"), !id.isEmpty { center.clear(id: sender.key + ":" + id) }
-            else {
-                for id in center.ids(matchingPrefix: sender.key + ":") { center.clear(id: id) }
-            }
+            else { center.clearMatching(prefix: sender.key + ":") }
             engineChanged()
             return
         }

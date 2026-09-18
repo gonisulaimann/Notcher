@@ -33,7 +33,7 @@ import SwiftUI
 //   MainActor.assumeIsolated + RunLoop.main.run pumps. No Task, no await.
 let probeMode = CommandLine.arguments.count >= 2 ? CommandLine.arguments[1] : ""
 switch probeMode {
-case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "overlap", "external":
+case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "overlap", "external", "socket":
     MainActor.assumeIsolated {
         switch probeMode {
         case "stress": Probe.StressSync.runStress()
@@ -43,6 +43,7 @@ case "stress", "persistence", "poweredge", "naming", "firstrun", "godmode", "ove
         case "godmode": Probe.StressSync.runGodmode()
         case "overlap": Probe.StressSync.runOverlap()
         case "external": Probe.StressSync.runExternal()
+        case "socket": Probe.StressSync.runSocket()
         default: Probe.StressSync.runNaming()
         }
     }
@@ -724,6 +725,102 @@ struct Probe {
             s7.revoke(identityKey: "source:Q")
             check(s7.visible(now: t0) == nil && s7.grants["source:Q"] == false,
                   "external revoke removes live activity")
+        }
+
+        /// IslandKit v2 socket: real loopback client against a live server —
+        /// consent gate, streaming, malformed-line survival, clear.
+        /// Waits pump the main runloop (never block it: the intent hop needs
+        /// the MainActor, which lives on this thread).
+        static func runSocket() {
+            final class Inbox: @unchecked Sendable {
+                var text = ""
+                let lock = NSLock()
+                func append(_ s: String) { lock.withLock { text += s } }
+                func takeLines() -> [String] {
+                    lock.withLock {
+                        let parts = text.components(separatedBy: "\n")
+                        if parts.count <= 1 { return [] }
+                        text = parts.last ?? ""
+                        return Array(parts.dropLast())
+                    }
+                }
+            }
+            let center = ExternalCenter()
+            let server = SocketServer()
+            server.onIntent = { intent in
+                Task { @MainActor in
+                    switch intent {
+                    case .push(let a): center.submit(a)
+                    case .clearID(let id): center.clear(id: id)
+                    case .clearSender(let p): center.clearMatching(prefix: p)
+                    }
+                }
+            }
+            server.start()
+            var up = false
+            for _ in 0 ..< 40 {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+                if server.isRunning { up = true; break }
+            }
+            check(up, "socket server binds loopback")
+            guard up else { server.stop(); return }
+
+            let inbox = Inbox()
+            let conn = NWConnection(host: "127.0.0.1",
+                                    port: NWEndpoint.Port(rawValue: SocketServer.port)!,
+                                    using: .tcp)
+            // Recursive drain helper as a small object: a nested func would
+            // inherit MainActor isolation and be uncallable from the
+            // @Sendable receive closure.
+            final class Drain: @unchecked Sendable {
+                let conn: NWConnection
+                let inbox: Inbox
+                init(_ c: NWConnection, _ i: Inbox) { conn = c; inbox = i }
+                func go() {
+                    conn.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isDone, _ in
+                        guard let self else { return }
+                        if let data, let s = String(data: data, encoding: .utf8) { self.inbox.append(s) }
+                        if !isDone { self.go() }
+                    }
+                }
+            }
+            let drain = Drain(conn, inbox)
+            let queue = DispatchQueue(label: "probe.socket")
+            conn.stateUpdateHandler = { state in
+                if case .ready = state { drain.go() }
+            }
+            conn.start(queue: queue)
+            func send(_ line: String) {
+                conn.send(content: Data((line + "\n").utf8), completion: .idempotent)
+            }
+            func waitReply(_ want: String, timeout: TimeInterval = 3) -> Bool {
+                let end = Date().addingTimeInterval(timeout)
+                while Date() < end {
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+                    if inbox.takeLines().contains(where: { $0.contains(want) }) { return true }
+                }
+                return false
+            }
+            // 1. Unknown source: accepted at the socket, pends at consent.
+            send(#"{"op":"push","id":"s1","source":"SockTest","title":"Hello"}"#)
+            check(waitReply(#""ok":true"#) && center.pending.count == 1 && center.visible == nil,
+                  "socket first push pends consent")
+            // 2. Approve, push again: visible.
+            center.approve(identityKey: "source:SockTest")
+            send(#"{"op":"push","id":"s1","source":"SockTest","title":"Hello"}"#)
+            check(waitReply(#""ok":true"#) && center.visible?.title == "Hello",
+                  "socket approved push shows")
+            // 3. Malformed line: rejected, connection survives.
+            send("this is not json")
+            let survived = waitReply(#""ok":false"#)
+            send(#"{"op":"push","id":"s2","source":"SockTest","title":"Again"}"#)
+            check(survived && waitReply(#""ok":true"#), "socket malformed rejected, stream survives")
+            // 4. Clear one id.
+            send(#"{"op":"clear","id":"s1","source":"SockTest"}"#)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+            check(center.visible?.title == "Again", "socket clear removes one id")
+            conn.cancel()
+            server.stop()
         }
 
         static func runPersistence() {

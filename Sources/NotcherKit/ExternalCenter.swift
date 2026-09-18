@@ -81,6 +81,11 @@ public final class ExternalCenter: ObservableObject {
         refresh()
     }
 
+    public func clearMatching(prefix: String) {
+        for id in ids(matchingPrefix: prefix) { store.clear(id: id) }
+        refresh()
+    }
+
     /// Ids owned by one sender (ids are namespaced `key:raw` at submit).
     public func ids(matchingPrefix prefix: String) -> [String] {
         store.activities.keys.filter { $0.hasPrefix(prefix) }
