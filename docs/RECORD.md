@@ -555,3 +555,77 @@ after hardware, the iPhone story told in motion rather than paragraphs.
 - Matrix at release: self-test 8/8; stress 12/12; persistence 4/4;
   reconnect 2/2; poweredge 4/4; naming 5/5; firstrun 6/6; shotwatch live
   PASS; snapshots re-rendered (Harbor toggle verified visually).
+
+---
+
+# Phase 8 — The Waterline Platform (0.4.0 "The Waterline Release")
+
+## IslandKit (URL v1 + socket v2 + CLI)
+
+- Third-party activities sit STRICTLY below user classes in resolve():
+  timer › transfer › remoteTimer › media › external. Nothing external can
+  preempt, expand, or focus-steal — enforced by construction (the branch
+  only renders when every user class is idle; compact tap still just pins).
+- Consent is attention management, stated as such in docs and code: identity
+  resolves from the Apple Event sender PID (real apps) or the declared
+  source string (shell/`open`-mediated pushes); a spoofed source buys a
+  local attacker nothing they lack. First push pends + flashes; Allow/Deny
+  persist; grants revocable in the tray ("Waterline access" section).
+- Rate cap 10/s per identity, queue cap 8 (lowest+oldest evicted), TTL
+  1 s…1 h always wins, payloads truncated, SF symbols validated.
+- `clear` sender-namespacing bug caught while writing docs (submit
+  namespaced, clear did not) — fixed + covered by the same-event reasoning.
+- CLI ships as `notcher-cli` product, installed AS `notcher`: a `notcher`
+  product collides with the `Notcher` app binary on case-insensitive APFS
+  and silently overwrites it in .build — found live when the bundled app
+  printed CLI usage. Install script + docs use the safe name throughout.
+- Socket v2: 127.0.0.1:17874, loopback-pinned transport params, newline
+  JSON, per-line replies, malformed lines get `{"ok":false}` without
+  dropping the stream. CLI tries socket, falls back to URL scheme.
+- Gate-1 demo, live: unapproved push flashed compact then receded with
+  nothing shown; grant → re-push rendered persistent compact; clear →
+  idle. External pill snapshot in docs/images.
+
+## Godmode
+
+- Overture beat machine (corner arc → greetings → timer/file/wave vocab →
+  recede, ~3.65 s full / 1.5 s reduced), explicit per-beat frames,
+  cancellable, onDone-once. No second window layer: drives the existing
+  panel via showCustom (argued in code — a spare window would redo every
+  ordering edge two sessions eliminated). Poll shows one frame per beat
+  change; no per-tick window ops.
+- Live proof: launch→start→end markers on the reduced schedule exactly;
+  beat snapshots render (greet + vocabFile).
+- Correction chain worth keeping: (1) firstRunMoment read the retired V1
+  key so the moment never fired — now didFirstRunV2, upgraders get it once
+  by design; (2) `pkill -f "Notcher"` suicides the invoking shell (pattern
+  matches its own command line) — an entire debugging saga chased a stale
+  process; `pkill -x` is the rule now.
+
+## Overlap
+
+- Expanded-only scrim (level 25, mouse-transparent, guarded lifecycle,
+  re-glued on screen changes). Honest boundary: app-level crowders at
+  ≤25 composite below the island (probed live against synthetic level
+  20/25/27 windows); system status icons always win by OS design — not
+  contested. No crowder app installed here; synthetic documented as such.
+
+## Edit-tool discipline (harness lesson, product-adjacent)
+
+- Trailing-newline strips in string replacement MERGE comment lines with
+  code (commented out a `do {`, broke Snapshot build confusingly). Rule:
+  never end old/new strings at line boundaries blindly; verify with build;
+  prefer python with assertions for whitespace surgery.
+
+## 0.4.0 evidence
+
+- Matrix: self-test 8/8; stress 12/12 (truth table now 5-wide);
+  persistence 4/4; reconnect 2/2; poweredge 4/4; naming 5/5; firstrun 6/6;
+  godmode 8/8; overlap 6/6; external 9/9; socket 5/5 (idempotent reruns);
+  shotwatch live PASS.
+- Snapshots: all nine states incl. external pill + two overture beats.
+- DMG 0.4.0: universal, signature verifies, layout read back
+  ({165,173}/{495,173}), installed copy reports 0.4.0 with live island.
+- Release + tag live; site + README repointed to 0.4.0.
+- Idle CPU re-measured: 0.37 % of one core over 30 s with socket listener +
+  screenshot watcher active (was 0.23–0.27 %); ps average 0.0 %.

@@ -26,7 +26,7 @@ into the camera housing. No widgets. No cloud. No noise.
 **You need:** macOS 14 or later, and a MacBook with a notch
 (no notch? it falls back to a floating capsule).
 
-1. Download **Notcher-0.3.0.dmg** from
+1. Download **Notcher-0.4.0.dmg** from
    [Releases](https://github.com/gonisulaimann/Notcher/releases).
 2. Open the DMG and drag Notcher into Applications.
 3. The first-launch warning is EXPECTED — the build is ad-hoc signed, and
