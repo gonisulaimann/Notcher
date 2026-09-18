@@ -63,39 +63,41 @@ public struct IslandMetrics: Equatable, Animatable, Sendable {
     public static let canvasSize = CGSize(width: 440, height: 594)
 
     public static func idle(_ layout: NotchGeometry.Layout) -> IslandMetrics {
-        let w = max(184, layout.notchWidth + 12)
+        let w = layout.hasNotch ? max(184, layout.notchWidth + 12) : 160
         let chin = layout.hasNotch ? layout.topInset : 0
-        let lip: CGFloat = layout.hasNotch ? 4 : 26
+        let lip: CGFloat = layout.hasNotch ? 3 : 14
         return IslandMetrics(width: w, chinH: chin, chinW: w,
-                             shoulder: 0, bodyH: lip, corner: layout.hasNotch ? 8 : 14)
+                             shoulder: 0, bodyH: lip, corner: layout.hasNotch ? 8 : 7)
     }
 
     /// Slim "wings" compact: content flanks the housing. Used by data pill
     /// activities (timer, remote timer, transfer).
     public static func compactSlim(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 0
-        let w = max(330, layout.notchWidth + 130)
+        let w = layout.hasNotch ? max(375, layout.notchWidth + 196) : 320
+        let lip: CGFloat = layout.hasNotch ? 8 : 38
         return IslandMetrics(width: w, chinH: chin, chinW: w,
-                             shoulder: 0, bodyH: 36, corner: 18)
+                             shoulder: 0, bodyH: lip, corner: layout.hasNotch ? 20 : 19)
     }
 
     /// Full "slab" compact: an organic capsule hanging from the top bezel.
     /// Media and external pills.
     public static func compactSlab(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 0
-        let w = max(360, layout.notchWidth + 175)
+        let w = layout.hasNotch ? max(380, layout.notchWidth + 200) : 340
+        let lip: CGFloat = layout.hasNotch ? 10 : 40
         return IslandMetrics(width: w, chinH: chin, chinW: w,
-                             shoulder: 0, bodyH: 42, corner: 24)
+                             shoulder: 0, bodyH: lip, corner: layout.hasNotch ? 21 : 20)
     }
 
     /// Expanded: a fluid, Apple-grade living surface with utility panels.
-    /// Height is ~220pt bodyH, perfectly proportioned under the notch with zero clipping.
+    /// Perfectly proportioned under the notch with zero clipping.
     public static func expanded(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 0
-        let w = min(420, max(390, layout.notchWidth + 220))
+        let w = min(420, max(390, layout.notchWidth + 210))
         return IslandMetrics(width: w,
                              chinH: chin, chinW: w,
-                             shoulder: 0, bodyH: 220,
+                             shoulder: 0, bodyH: 215,
                              corner: 28)
     }
 

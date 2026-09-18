@@ -274,8 +274,7 @@ public struct IslandRootView: View {
                 ))
         } else {
             compactContent
-                .frame(width: metrics.width, height: metrics.bodyH, alignment: .top)
-                .padding(.top, metrics.contentTop)
+                .frame(width: metrics.width, height: metrics.height, alignment: .center)
                 .transition(.opacity)
         }
         // Privacy sensors always visible when active.
@@ -298,46 +297,47 @@ public struct IslandRootView: View {
 
     @ViewBuilder
     private var compactContent: some View {
+        let notchW = currentLayout.hasNotch ? currentLayout.notchWidth : 0
         if let flash = island.flash {
             if flash.icon == "bolt.fill" {
-                ChargingFlashContent(text: flash.text, percent: power.percent)
+                ChargingFlashContent(text: flash.text, percent: power.percent, chinW: notchW)
             } else {
-                FlashContent(icon: flash.icon, text: flash.text)
+                FlashContent(icon: flash.icon, text: flash.text, chinW: notchW)
             }
         } else {
             switch island.activity {
             case .liveActivity:
                 if let live = link.liveActivity {
-                    LiveActivitySlabContent(live: live)
+                    LiveActivitySlabContent(live: live, chinW: notchW)
                 } else {
-                    FlashContent(icon: "sparkles", text: "Live Activity")
+                    FlashContent(icon: "sparkles", text: "Live Activity", chinW: notchW)
                 }
             case .timer:
-                TimerWingsContent(timer: timer)
+                TimerWingsContent(timer: timer, chinW: notchW)
             case .transfer:
-                TransferWingsContent(link: link)
+                TransferWingsContent(link: link, chinW: notchW)
             case .remoteTimer:
                 if let r = link.remoteTimer {
                     RemoteTimerPillContent(peer: r.peer, remaining: r.remaining,
-                                           total: r.total, updatedAt: r.updatedAt)
+                                           total: r.total, updatedAt: r.updatedAt, chinW: notchW)
                 } else {
-                    FlashContent(icon: "timer", text: "iPhone timer ended")
+                    FlashContent(icon: "timer", text: "iPhone timer ended", chinW: notchW)
                 }
             case .media:
                 if media.appName != nil {
-                    MediaSlabContent(media: media)
+                    MediaSlabContent(media: media, chinW: notchW)
                 } else {
-                    FlashContent(icon: "music.note", text: "Nothing playing")
+                    FlashContent(icon: "music.note", text: "Nothing playing", chinW: notchW)
                 }
             case .external:
                 if let e = center.visible {
                     ExternalSlabContent(icon: e.icon, title: e.title, subtitle: e.subtitle,
-                                        progress: e.progress, source: e.source)
+                                        progress: e.progress, source: e.source, chinW: notchW)
                 } else {
-                    FlashContent(icon: "app.badge", text: "Waterline clear")
+                    FlashContent(icon: "app.badge", text: "Waterline clear", chinW: notchW)
                 }
             case .none:
-                IdleHintContent()
+                IdleHintContent(chinW: notchW)
             }
         }
     }
@@ -374,126 +374,92 @@ public struct WaveformIndicator: View {
     }
 }
 
-/// The wings row: leading and trailing rails with flexible center separation.
-/// Content renders BELOW the housing band with comfortable breathing room.
+/// Symmetrical Wings Row: leading and trailing rails flanking the camera housing.
+/// Content renders centered across the full pill height.
 struct WingsRow<Leading: View, Trailing: View>: View {
     var chinW: CGFloat = 0
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 7) { leading }
+        HStack(spacing: 0) {
+            HStack(spacing: 6) { leading }
                 .lineLimit(1)
-            Spacer(minLength: max(16, chinW > 0 ? 24 : 16))
-            HStack(spacing: 7) { trailing }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if chinW > 0 {
+                Spacer()
+                    .frame(width: chinW)
+            } else {
+                Spacer(minLength: 16)
+            }
+
+            HStack(spacing: 6) { trailing }
                 .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.horizontal, 16)
-        .frame(maxHeight: .infinity)
+        .padding(.horizontal, 14)
+        .frame(maxHeight: .infinity, alignment: .center)
     }
 }
 
 struct ChargingFlashContent: View {
     var text: String
     var percent: Double?
+    var chinW: CGFloat = 0
 
     var body: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                ZStack {
-                    Circle()
-                        .fill(Color.green.opacity(0.25))
-                        .frame(width: 20, height: 20)
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.green)
-                }
-                Text("Charging")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
+        WingsRow(chinW: chinW) {
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.25))
+                    .frame(width: 18, height: 18)
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.green)
             }
-
-            Spacer()
-
+            Text("Charging")
+                .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+        } trailing: {
             if let pct = percent {
-                HStack(spacing: 4) {
-                    Text("\(Int(pct))%")
-                        .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.green)
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.green.opacity(0.80))
-                }
+                Text("\(Int(pct))%")
+                    .font(.system(size: 12.5, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.green)
             }
         }
-        .padding(.horizontal, 16)
-        .frame(maxHeight: .infinity)
     }
 }
 
 public struct LiveActivitySlabContent: View {
     public var live: LinkHost.MirroredLiveActivity
+    var chinW: CGFloat = 0
 
-    public init(live: LinkHost.MirroredLiveActivity) { self.live = live }
+    public init(live: LinkHost.MirroredLiveActivity, chinW: CGFloat = 0) {
+        self.live = live
+        self.chinW = chinW
+    }
 
     public var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [iconColor.opacity(0.35), iconColor.opacity(0.12)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                Image(systemName: live.icon)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(iconColor)
-            }
-            .frame(width: 32, height: 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(live.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    if let lead = live.leadingText, !lead.isEmpty {
-                        Text(lead)
-                            .font(.system(size: 9.5, weight: .medium))
-                            .foregroundStyle(iconColor.opacity(0.90))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(iconColor.opacity(0.15), in: Capsule())
-                    }
-                }
-                if let sub = live.subtitle {
-                    Text(sub)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.65))
-                        .lineLimit(1)
-                }
-                if let p = live.progress, p > 0 {
-                    Meter(value: p, color: iconColor, height: 3)
-                        .padding(.top, 1)
-                }
-            }
-
-            Spacer(minLength: 4)
-
+        WingsRow(chinW: chinW) {
+            Image(systemName: live.icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(iconColor)
+            Text(live.title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        } trailing: {
             if let trail = live.trailingText, !trail.isEmpty {
                 Text(trail)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.10), in: Capsule())
+            } else if let sub = live.subtitle {
+                Text(sub)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.70))
             }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 44)
     }
 
     private var iconColor: Color {
@@ -578,109 +544,68 @@ struct IdleHintContent: View {
     }
 }
 
-/// Media slab: minimal, un-cluttered collapsed single-activity context.
-/// Leading: album artwork (or music glyph).
-/// Middle: song title and artist in pristine SF Pro typography.
+/// Media slab: minimal, un-cluttered collapsed single-activity context flanking the notch.
+/// Leading: album artwork (or music glyph) with smooth 6pt corners and subtle shadow.
+/// Center: physical camera housing band.
 /// Trailing: subtle live audio waveform equalizer.
 public struct MediaSlabContent: View {
     @ObservedObject var media: MediaEngine
+    var chinW: CGFloat = 0
 
-    public init(media: MediaEngine) { self.media = media }
+    public init(media: MediaEngine, chinW: CGFloat = 0) {
+        self.media = media
+        self.chinW = chinW
+    }
 
     public var body: some View {
-        HStack(spacing: 10) {
+        WingsRow(chinW: chinW) {
             ArtworkView(url: media.artworkURL, data: media.artworkData, cornerRadius: 6)
-                .frame(width: 26, height: 26)
-                .shadow(color: .black.opacity(0.35), radius: 3, y: 1.5)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(media.title ?? "Nothing playing")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .tracking(-0.2)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let subtitle = [media.artist, media.appName].compactMap({ $0 }).first, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.system(size: 10.5, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.60))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-
-            Spacer(minLength: 8)
-
+                .frame(width: 24, height: 24)
+                .shadow(color: .black.opacity(0.40), radius: 3, y: 1)
+        } trailing: {
             WaveformIndicator(isPlaying: media.playing, color: IslandPalette.media)
         }
-        .padding(.horizontal, 14)
-        .frame(height: 42)
     }
 }
 
-/// External (waterline) slab: mirrors the media slab's language.
+/// External (waterline) slab: mirrors the media slab's language flanking the notch.
 public struct ExternalSlabContent: View {
     public var icon: String
     public var title: String
     public var subtitle: String?
     public var progress: Double?
     public var source: String
+    var chinW: CGFloat = 0
 
-    public init(icon: String, title: String, subtitle: String?, progress: Double?, source: String) {
+    public init(icon: String, title: String, subtitle: String? = nil, progress: Double? = nil, source: String = "", chinW: CGFloat = 0) {
         self.icon = icon
         self.title = title
         self.subtitle = subtitle
         self.progress = progress
         self.source = source
+        self.chinW = chinW
     }
 
     public var body: some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [IslandPalette.external.opacity(0.28), IslandPalette.external.opacity(0.12)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(IslandPalette.external.opacity(0.35), lineWidth: 1)
-                )
-                .frame(width: 32, height: 32)
-                .overlay(
-                    Image(systemName: icon)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(IslandPalette.external)
-                )
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .tracking(-0.2)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Text(subtitle ?? source)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.65))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let p = progress {
-                    Meter(value: p, color: IslandPalette.external, height: 3)
-                        .padding(.top, 1)
-                }
+        WingsRow(chinW: chinW) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(IslandPalette.external)
+            Text(title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        } trailing: {
+            if let subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.75))
+            } else if !source.isEmpty {
+                Text(source)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(IslandPalette.external.opacity(0.85))
             }
-            Spacer(minLength: 4)
-            Text(source)
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(IslandPalette.external.opacity(0.85))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(IslandPalette.external.opacity(0.15), in: Capsule())
         }
-        .padding(.horizontal, 14)
-        .frame(height: 44)
     }
 }
 

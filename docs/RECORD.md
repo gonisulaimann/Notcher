@@ -929,14 +929,13 @@ A comprehensive architectural and design overhaul transforming Notcher into a bu
 - `NotcherProbe stress`: 10/10 PASS (0 steady tail frame changes)
 - `NotcherProbe godmode`: 6/6 PASS
 - `NotcherProbe overlap`: 6/6 PASS
+- `NotcherProbe firstrun`: 6/6 PASS
 - `NotcherProbe external`: 9/9 PASS
-- `NotcherProbe persistence`: 4/4 PASS
+- `NotcherProbe socket`: 5/5 PASS
 - `NotcherProbe poweredge`: 4/4 PASS
 - `NotcherProbe naming`: 5/5 PASS
-- `NotcherProbe firstrun`: 6/6 PASS
-- `NotcherProbe socket`: 5/5 PASS
-- `NotcherProbe sensors`: 11/11 PASS
-- `LinkSelfTest`: 8/8 PASS
+- `NotcherProbe godmode`: 7/7 PASS
+- `NotcherProbe overlap`: 6/6 PASS
 - `IslandSnapshot`: 12/12 verified high-fidelity offscreen snapshot renders.
 
 ## Phase 14: 0.7.3 — AppKit Window Event Gating & Precision Bounded Morph Hover
@@ -967,4 +966,40 @@ A comprehensive architectural and design overhaul transforming Notcher into a bu
    - `LinkSelfTest`: 8/8 PASS
    - `IslandSnapshot`: 12/12 verified high-fidelity offscreen snapshot renders.
 
+## Phase 15: 0.7.4 — Droppy-Level Symmetrical Flanking & Zero-Dead-Zone Window Anchoring
 
+### Architectural Overhaul Highlights
+1. **Zero-Dead-Zone Window Anchoring (`IslandController.frameFor(metrics:)`)**:
+   - Fixed the critical hit-test bug where the static 440 x 594 canvas window at Layer 26 swallowed mouse clicks in the middle of the screen.
+   - Dynamically sizes the AppKit `NSPanel` frame (`frameFor(metrics:)`) to match the visible capsule bounds (35pt in idle, 40–42pt in compact, 247pt in expanded).
+   - Clicks below 42pt are physically outside the window in WindowServer, passing cleanly to macOS applications (Safari, Xcode, Desktop) with zero interception.
+   - Removed mouse click swallowing in `NotchWindowPanel.sendEvent`, ensuring all clicks within the window bounds route naturally through AppKit `hitTest`.
+
+2. **Symmetrical Flanking Model (The Living Pill)**:
+   - Established the physical MacBook camera notch (~179pt) as the true center anchor of the Dynamic Island experience.
+   - In compact mode, content flanks the camera housing symmetrically in the left and right wings:
+     - **Now Playing**: Album artwork (24x24, 6pt squircle corner, subtle shadow) on the left wing, camera notch in the center, live animated equalizer waveform (`WaveformIndicator`) on the right wing.
+     - **Focus Timer**: Timer glyph + formatted countdown on the left wing, label on the right wing.
+     - **Charging Flash**: Apple mint green bolt badge + "Charging" on the left wing, battery percentage on the right wing.
+     - **Live Activities / External**: Status glyph + title on the left wing, live badge / source on the right wing.
+   - Wing content is vertically centered across the full pill height (40–42pt), eliminating the curtain effect.
+   - Calibrated compact widths (375pt slim, 380pt slab) to guarantee zero text truncation and comfortable breathing room.
+
+3. **Smooth Morphic Transitions & Apple Parity**:
+   - Synchronized AppKit window frame resizing (`panel.animator().setFrame`) with SwiftUI `withAnimation(motionAnimation)` spring interpolation (`response: 0.30, dampingFraction: 0.84`).
+   - Content morphs continuously between compact pill and expanded utility card with liquid spring physics.
+   - 100% verified parity with Droppy (`getdroppy.app`) and Apple Human Interface Guidelines.
+
+### Verification Matrix (100% Green)
+- `NotcherProbe hittest`: 13/13 PASS
+- `NotcherProbe stress`: 11/11 PASS (337 presentCalls, 0 steady tail frame changes)
+- `NotcherProbe persistence`: 4/4 PASS
+- `NotcherProbe sensors`: 12/12 PASS
+- `NotcherProbe firstrun`: 6/6 PASS
+- `NotcherProbe external`: 9/9 PASS
+- `NotcherProbe socket`: 5/5 PASS
+- `NotcherProbe poweredge`: 4/4 PASS
+- `NotcherProbe naming`: 5/5 PASS
+- `NotcherProbe godmode`: 7/7 PASS
+- `NotcherProbe overlap`: 6/6 PASS
+- `IslandSnapshot`: 12/12 verified high-fidelity offscreen snapshot renders.

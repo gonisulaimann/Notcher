@@ -17,10 +17,6 @@ public class NotchWindowPanel: NSPanel {
 
     override public func sendEvent(_ event: NSEvent) {
         switch event.type {
-        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            if let check = hitTestCheck, !check(event.locationInWindow) {
-                return
-            }
         case .mouseMoved:
             if let check = hitTestCheck {
                 let inside = check(event.locationInWindow)
@@ -123,9 +119,17 @@ public final class IslandController {
     public init() {
         screen = NSScreen.main ?? NSScreen.screens.first!
         layout = NotchGeometry.layout(for: screen)
+        metrics = IslandMetrics.idle(layout)
+
+        let initialFrame = NSRect(
+            x: ((layout.hasNotch ? layout.housingRect.midX : screen.frame.midX) - metrics.width / 2).rounded(),
+            y: screen.frame.maxY - metrics.height,
+            width: metrics.width,
+            height: metrics.height
+        )
 
         panel = IslandPanel(
-            contentRect: NSRect(origin: .zero, size: IslandMetrics.canvasSize),
+            contentRect: initialFrame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -203,18 +207,44 @@ public final class IslandController {
 
     // MARK: - Content
 
+    public func frameFor(metrics: IslandMetrics) -> NSRect {
+        let f = screen.frame
+        let centerX = layout.hasNotch ? layout.housingRect.midX : f.midX
+        let h = max(24, metrics.height)
+        let w = max(160, metrics.width)
+        let x = (centerX - w / 2).rounded()
+        let y = f.maxY - h
+        return NSRect(x: x, y: y, width: w, height: h)
+    }
+
+    public func updateFrame(animate: Bool) {
+        let targetFrame = frameFor(metrics: metrics)
+        if panel.frame.equalTo(targetFrame) { return }
+
+        if animate && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.28
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
+                panel.animator().setFrame(targetFrame, display: true)
+            }
+        } else {
+            panel.setFrame(targetFrame, display: true)
+        }
+    }
+
     /// Install the SwiftUI root (NSHostingView). Called once by the
     /// coordinator; the view reads island state and morphs itself.
     /// Wrapped in a ShapeHitView so only the live shape takes events.
     public func setRoot(_ view: some View) {
+        let initialSize = frameFor(metrics: metrics).size
         let hosting = IslandHostingView(rootView: view)
-        hosting.frame = NSRect(origin: .zero, size: IslandMetrics.canvasSize)
+        hosting.frame = NSRect(origin: .zero, size: initialSize)
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         hosting.autoresizingMask = [.width, .height]
         hosting.menuProvider = { [weak self] in
             self?.contextMenuProvider?()
         }
-        let hit = ShapeHitView(frame: NSRect(origin: .zero, size: IslandMetrics.canvasSize))
+        let hit = ShapeHitView(frame: NSRect(origin: .zero, size: initialSize))
         hit.autoresizingMask = [.width, .height]
         hit.addSubview(hosting)
         // Reads live metrics at hit time: morphs never desync hit-testing.
@@ -236,13 +266,11 @@ public final class IslandController {
     // MARK: - Surface presentation
 
     /// The coordinator's single window touch: hand over the surface's
-    /// metrics. No resizing, no reordering, no animation here — SwiftUI
-    /// owns every frame of the morph inside the window.
+    /// metrics. Resizes the window to hug the visible island exactly.
     public func present(metrics: IslandMetrics, expanded: Bool, allowKey: Bool) {
         self.metrics = metrics
         presentCalls += 1
-        // The canvas window lives on screen for the whole app lifetime;
-        // SwiftUI melts the *shape* in idle, never the window.
+        updateFrame(animate: true)
         if !panel.isVisible { panel.orderFrontRegardless() }
         panel.allowKey = allowKey
         if !allowKey, panel.isKeyWindow { panel.resignKey() }
@@ -267,12 +295,8 @@ public final class IslandController {
     // MARK: - Geometry
 
     private func placeCanvas() {
-        let f = screen.frame
-        let size = IslandMetrics.canvasSize
-        let centerX = layout.hasNotch ? layout.housingRect.midX : f.midX
-        let x = (centerX - size.width / 2).rounded()
-        let y = f.maxY - size.height
-        panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
+        let f = frameFor(metrics: metrics)
+        panel.setFrame(f, display: true)
     }
 
     @objc private func screensChanged(_: Notification) {
@@ -291,15 +315,15 @@ public final class IslandController {
     /// Enforces strict top-edge proximity in idle mode: only the physical camera housing
     /// pixels or a microscopic 2–3 pixel top bezel strip will intercept events.
     private func shapeContains(windowPoint: NSPoint, slop: CGFloat) -> Bool {
-        let contentH = panel.contentView?.bounds.height ?? IslandMetrics.canvasSize.height
+        let bounds = panel.contentView?.bounds.size ?? frameFor(metrics: metrics).size
+        let contentH = bounds.height
         let tl = CGPoint(x: windowPoint.x, y: contentH - windowPoint.y)
-        let canvasW = IslandMetrics.canvasSize.width
 
         // In idle mode (collapsed with no live activity body), enforce strict top-edge proximity.
         // Sweeping across the menu bar or below the notch falls through cleanly to macOS.
         let isIdle = (!expandedVisible && metrics.bodyH <= 12)
         if isIdle {
-            let midX = canvasW / 2
+            let midX = bounds.width / 2
             if layout.hasNotch {
                 let notchHalfW = max(layout.notchWidth / 2, metrics.chinW / 2)
                 let inNotchHousing = (tl.y >= 0 && tl.y <= layout.topInset && abs(tl.x - midX) <= notchHalfW)
@@ -311,7 +335,7 @@ public final class IslandController {
         }
 
         // In compact or expanded mode, hit-test against the exact morph path.
-        return IslandMetrics.hitTest(tl, in: IslandMetrics.canvasSize, m: metrics, slop: slop)
+        return IslandMetrics.hitTest(tl, in: bounds, m: metrics, slop: slop)
     }
 
     /// Cursor containment against the CURRENT morph shape, for the global
@@ -320,6 +344,8 @@ public final class IslandController {
         guard panel.isVisible else { return false }
         let mouse = NSEvent.mouseLocation
         let windowPt = panel.convertFromScreen(NSRect(origin: mouse, size: .zero)).origin
+        let bounds = panel.contentView?.bounds ?? NSRect(origin: .zero, size: frameFor(metrics: metrics).size)
+        if !bounds.contains(windowPt) { return false }
         return shapeContains(windowPoint: windowPt, slop: 0)
     }
 

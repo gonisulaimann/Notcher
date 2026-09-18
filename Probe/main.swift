@@ -590,8 +590,9 @@ struct Probe {
             menu.addItem(NSMenuItem(title: "Quit Notcher", action: nil, keyEquivalent: "q"))
             ctl.contextMenuProvider = { menu }
 
-            // Inside slab (top-left y=76 in 594-height canvas -> bottom-left y=518)
-            let insidePt = NSPoint(x: 220, y: size.height - (32 + 20 + 24))
+            let panelH = ctl.panel.contentView?.bounds.height ?? slab.height
+            // Inside slab (top-left y=76 -> bottom-left y = panelH - 76)
+            let insidePt = NSPoint(x: 220, y: panelH - (32 + 20 + 24))
             let hitInside = ctl.panel.contentView?.hitTest(insidePt)
             check(hitInside != nil, "hittest inside shape returns view")
             let dummyEvent = NSEvent.mouseEvent(with: .rightMouseDown,
@@ -606,8 +607,8 @@ struct Probe {
             let menuReturned = hitInside?.menu(for: dummyEvent ?? NSEvent())
             check(menuReturned?.items.first?.title == "Quit Notcher", "hittest right-click menu resolved")
 
-            // Outside shape (bottom-left y=100 in 594-height canvas)
-            let outsidePt = NSPoint(x: 10, y: 100)
+            // Outside shape (beside chin at top: bottom-left y = panelH - 10)
+            let outsidePt = NSPoint(x: 10, y: panelH - 10)
             let hitOutside = ctl.panel.contentView?.hitTest(outsidePt)
             check(hitOutside == nil, "hittest outside shape returns nil view")
             check(ctl.panel.hitTestCheck?(insidePt) == true, "hittest panel check approves inside")

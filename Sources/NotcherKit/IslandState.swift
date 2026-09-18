@@ -138,7 +138,9 @@ public final class IslandState: ObservableObject {
     private func setMode(_ m: Mode, why: String) {
         if mode == m { return }
         IslandDebug.log("mode \(mode) -> \(m) (\(why))")
-        mode = m
+        withAnimation(motionAnimation) {
+            mode = m
+        }
     }
 
     public func showFlash(icon: String, text: String, seconds: TimeInterval = 4) {
