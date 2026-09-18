@@ -21,3 +21,7 @@ notcher-probe-note.txt
 .swiftpm/
 *.o
 *.d
+
+# Internal handover notes
+HANDOVER.md
+
