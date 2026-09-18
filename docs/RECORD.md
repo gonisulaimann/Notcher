@@ -857,15 +857,46 @@ A comprehensive architectural and design overhaul transforming Notcher into a bu
    - Low battery pulse warning when unplugged and battery critical.
    - Real-time privacy dots for active Camera and Microphone usage.
 
-### Verification Matrix (100% Green)
-
-- `NotcherProbe hittest`: 8/8 PASS
-- `NotcherProbe stress`: 12/12 PASS
-- `NotcherProbe sensors`: 12/12 PASS
-- `NotcherProbe godmode`: 8/8 PASS
+- `NotcherProbe hittest`: 11/11 PASS
+- `NotcherProbe stress`: 10/10 PASS
+- `NotcherProbe godmode`: 6/6 PASS
 - `NotcherProbe overlap`: 6/6 PASS
+- `NotcherProbe external`: 9/9 PASS
+- `NotcherProbe persistence`: 4/4 PASS
+- `NotcherProbe poweredge`: 4/4 PASS
+- `NotcherProbe naming`: 5/5 PASS
+- `NotcherProbe firstrun`: 6/6 PASS
+- `NotcherProbe socket`: 5/5 PASS
 - `LinkSelfTest`: 8/8 PASS
 - `IslandSnapshot`: 12/12 verified high-fidelity offscreen snapshot renders.
 
+## Phase 12: 0.7.1 — Droppy Kernel/AppKit Hardware Fusion & Liquid Glass Architecture
 
+### Architecture Refactor & Hardening
+1. **Low-Level Window Server Architecture (`NotchWindowPanel` & `IslandHostingView`)**:
+   - Programmatic subpixel anchor to `NSScreen.main?.auxiliaryTopLeftArea` / physical camera housing.
+   - Transparent, non-activating panel (`.nonactivatingPanel`) at status window level 26.
+   - Dynamic screen reconfiguration listening (`NSApplication.didChangeScreenParametersNotification`).
+   - `IslandHostingView` overrides `menu(for:)` and `rightMouseDown(with:)` guaranteeing instant AppKit context menus on right-click anywhere across SwiftUI views.
+   - `ShapeHitView` shaped click-through: passes mouse events cleanly through empty canvas space to background windows, capturing clicks only within the physical island capsule contour.
 
+2. **Liquid Morphic Spring Physics & 120Hz Animations**:
+   - Container shape morphs with `.interactiveSpring(response: 0.32, dampingFraction: 0.78, blendDuration: 0.25)`.
+   - Content crossfades with `.interactiveSpring(response: 0.28, dampingFraction: 0.82, blendDuration: 0.20)`.
+   - Liquid elastic stretching originating directly from camera housing.
+   - Smooth hover expansion with instant, stutter-free snap-back on cursor departure.
+
+3. **Liquid Glass Visual Engine**:
+   - Apple `.ultraThinMaterial` / `.popover` blur layers with deep lens gradient (`#14141a` to `#08080a`).
+   - Inner rim stroke gradient (15% white opacity) flush with notch bezel.
+   - Soft contact & ambient drop shadow (`radius: 12, y: 6` at 20% black).
+   - Vignette dissolve mask preventing text/icon clipping during container morphing.
+
+4. **Expanded Productivity Hub**:
+   - Draggable clipboard history chips with `.onDrag` support for dragging text or snippets directly into other apps.
+   - Audio output switcher in Quick Toggles panel.
+   - MagSafe charging surge wave across capsule with micro-glow privacy dots for active camera and microphone.
+
+5. **Watchdog Engine & Panic Exit Listener**:
+   - Automated `WatchdogEngine` monitoring main-thread runloop latency (6s threshold) and resident memory footprint (512MB ceiling) with graceful window unregistration.
+   - Global and local panic exit listeners (`Cmd + Shift + Option + Esc`, `Cmd + Q`, `Esc`).
