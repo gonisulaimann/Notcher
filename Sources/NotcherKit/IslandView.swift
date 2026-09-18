@@ -74,26 +74,71 @@ struct SurfaceView: View {
     var strokeStyle: AnyShapeStyle
     var strokeWidth: CGFloat
     var expanded: Bool
+    var dropTarget: Bool = false
+    var pointerInside: Bool = false
 
     var body: some View {
         ZStack {
-            VisualEffect()
-            MorphShape(m: metrics)
-                .fill(Color.black.opacity(0.5))
-            LinearGradient(colors: [.white.opacity(0.16), .clear],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: 2)
-                .frame(maxHeight: .infinity, alignment: .top)
+            // 1. Base Apple Vibrancy Glass
+            VisualEffect(material: .popover)
+
+            // 2. Luminous dark tonal gradient (Apple Liquid Glass depth)
+            LinearGradient(
+                colors: [
+                    Color(red: 0.08, green: 0.08, blue: 0.10).opacity(0.70),
+                    Color(red: 0.03, green: 0.03, blue: 0.04).opacity(0.85)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            // 3. Drop target ambient illumination wash
+            if dropTarget {
+                LinearGradient(
+                    colors: [Color.orange.opacity(0.24), Color.orange.opacity(0.04)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+
+            // 4. Subtle top crest reflection line
+            LinearGradient(
+                colors: [Color.white.opacity(0.35), Color.white.opacity(0.08), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 3)
+            .frame(maxHeight: .infinity, alignment: .top)
         }
         .mask(MorphShape(m: metrics))
         .overlay(
+            // 5. Specular rim light with directional gradient
             MorphShape(m: metrics)
-                .stroke(strokeStyle, lineWidth: strokeWidth)
+                .stroke(
+                    dropTarget
+                        ? AnyShapeStyle(Color.orange.opacity(0.92))
+                        : AnyShapeStyle(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(pointerInside ? 0.38 : 0.26),
+                                    Color.white.opacity(pointerInside ? 0.18 : 0.10),
+                                    Color.white.opacity(0.04)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        ),
+                    lineWidth: dropTarget ? 2 : 1
+                )
                 .allowsHitTesting(false)
         )
-        .shadow(color: .black.opacity(expanded ? 0.42 : 0.30),
-                radius: expanded ? 22 : 14,
-                y: expanded ? 9 : 5)
+        // 6. Dual-stage depth shadows
+        .shadow(color: .black.opacity(expanded ? 0.35 : 0.25),
+                radius: expanded ? 8 : 5,
+                y: expanded ? 4 : 2)
+        .shadow(color: .black.opacity(expanded ? 0.45 : 0.32),
+                radius: expanded ? 28 : 16,
+                y: expanded ? 12 : 6)
     }
 }
 
@@ -140,14 +185,10 @@ public struct IslandRootView: View {
     /// change; SwiftUI animates the MorphShape between them (one continuous
     /// spring interpolation — the whole transition).
     private var metrics: IslandMetrics {
-        var m = island.surfaceMetrics(layout: layout)
         if island.mode == .compact, island.flash != nil {
-            // Flashes announce in the wings form so text flanks the housing.
-            let slim = IslandMetrics.compactSlim(layout)
-            m.width = slim.width
-            m.chinW = slim.chinW
+            return IslandMetrics.compactSlim(layout)
         }
-        return m
+        return island.surfaceMetrics(layout: layout)
     }
 
     public var body: some View {
@@ -171,16 +212,19 @@ public struct IslandRootView: View {
     private var surfaceLayer: some View {
         SurfaceView(metrics: metrics,
                     strokeStyle: island.dropTarget
-                        ? AnyShapeStyle(.orange.opacity(0.9))
-                        : AnyShapeStyle(.white.opacity(island.pointerInside ? 0.20 : 0.12)),
+                        ? AnyShapeStyle(Color.orange.opacity(0.92))
+                        : AnyShapeStyle(Color.white.opacity(island.pointerInside ? 0.22 : 0.14)),
                     strokeWidth: island.dropTarget ? 2 : 1,
-                    expanded: island.mode == .expanded)
+                    expanded: island.mode == .expanded,
+                    dropTarget: island.dropTarget,
+                    pointerInside: island.pointerInside)
             .animation(island.motionAnimation, value: metrics)
     }
 
     private var contentLayer: some View {
         content
-            .frame(width: metrics.width, alignment: .top)
+            .frame(width: metrics.width, height: metrics.height, alignment: .top)
+            .mask(MorphShape(m: metrics))
             .animation(island.motionAnimation, value: metrics)
     }
 
@@ -188,20 +232,24 @@ public struct IslandRootView: View {
     private var content: some View {
         if let beat = island.overtureBeat {
             OvertureBeatContent(beat: beat)
+                .frame(width: metrics.width, height: metrics.bodyH)
                 .padding(.top, metrics.contentTop)
         } else if island.mode == .hud, let hud = island.hud {
             HudView(content: hud)
-                .padding(.top, metrics.contentTop + 6)
+                .frame(width: metrics.width, height: metrics.bodyH)
+                .padding(.top, metrics.contentTop)
         } else if island.mode == .expanded {
             ExpandedView(island: island, timer: timer, media: media, power: power,
                          harbor: harbor, link: link, center: center,
                          clipboard: clipboard, hudEngine: hudEngine,
                          privacy: privacy, onInteract: onInteract)
+                .frame(width: metrics.width, height: metrics.bodyH)
                 .padding(.top, metrics.contentTop)
                 .transition(.opacity)
         } else {
             compactContent
-                .padding(.top, metrics.contentTop + (metrics.shoulder == 0 ? 0 : 2))
+                .frame(width: metrics.width, height: metrics.bodyH)
+                .padding(.top, metrics.contentTop)
         }
         // Privacy sensors always visible when active.
         if privacy.privacyActive {
@@ -260,28 +308,51 @@ public struct IslandRootView: View {
 
 // MARK: - Compact content (notch-safe geometry)
 
-/// The wings row: leading and trailing rails with an optional center gap.
-/// All compact content renders BELOW the housing band (contentTop), so the
-/// rails are a layout language, not a collision workaround; the gap only
-/// appears where a row intentionally straddles housing-height (none today).
+/// Live equalizer animation that reacts to playback state.
+public struct WaveformIndicator: View {
+    public var isPlaying: Bool
+    public var color: Color = IslandPalette.media
+
+    public init(isPlaying: Bool, color: Color = IslandPalette.media) {
+        self.isPlaying = isPlaying
+        self.color = color
+    }
+
+    public var body: some View {
+        TimelineView(.animation(minimumInterval: 0.08, paused: !isPlaying)) { timeline in
+            let t = isPlaying ? timeline.date.timeIntervalSinceReferenceDate : 0
+            HStack(alignment: .bottom, spacing: 2) {
+                bar(height: isPlaying ? 4 + 7 * abs(sin(t * 7.0)) : 3)
+                bar(height: isPlaying ? 5 + 8 * abs(sin(t * 9.5 + 1.2)) : 5)
+                bar(height: isPlaying ? 3 + 9 * abs(sin(t * 6.2 + 2.5)) : 3)
+            }
+            .frame(width: 12, height: 14, alignment: .bottom)
+        }
+    }
+
+    private func bar(height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 1, style: .continuous)
+            .fill(color)
+            .frame(width: 2, height: height)
+    }
+}
+
+/// The wings row: leading and trailing rails with flexible center separation.
+/// Content renders BELOW the housing band with comfortable breathing room.
 struct WingsRow<Leading: View, Trailing: View>: View {
     var chinW: CGFloat = 0
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        GeometryReader { geo in
-            let pad: CGFloat = 13
-            let railW = max(10, (geo.size.width - pad * 2 - chinW) / 2)
-            HStack(spacing: 0) {
-                HStack(spacing: 7) { leading }
-                    .frame(width: railW, alignment: .leading)
-                Spacer(minLength: chinW)
-                HStack(spacing: 7) { trailing }
-                    .frame(width: railW, alignment: .trailing)
-            }
-            .padding(.horizontal, pad)
+        HStack(spacing: 8) {
+            HStack(spacing: 7) { leading }
+                .lineLimit(1)
+            Spacer(minLength: max(16, chinW > 0 ? 24 : 16))
+            HStack(spacing: 7) { trailing }
+                .lineLimit(1)
         }
+        .padding(.horizontal, 16)
         .frame(maxHeight: .infinity)
     }
 }
@@ -289,26 +360,25 @@ struct WingsRow<Leading: View, Trailing: View>: View {
 struct FlashContent: View {
     var icon: String
     var text: String
-    var chinW: CGFloat = 120
+    var chinW: CGFloat = 0
     var body: some View {
         WingsRow(chinW: chinW) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.9))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.95))
         } trailing: {
             Text(text)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .minimumScaleFactor(0.7)
         }
     }
 }
 
 struct TimerWingsContent: View {
     @ObservedObject var timer: TimerEngine
-    var chinW: CGFloat = 120
+    var chinW: CGFloat = 0
     var body: some View {
         WingsRow(chinW: chinW) {
             Image(systemName: "timer")
@@ -317,10 +387,12 @@ struct TimerWingsContent: View {
             Text(TimerFormat.string(timer.remaining))
                 .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
                 .foregroundStyle(.white)
+                .lineLimit(1)
+                .fixedSize()
         } trailing: {
             Text(timer.label.isEmpty ? "Focus" : timer.label)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.65))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.70))
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
@@ -329,7 +401,7 @@ struct TimerWingsContent: View {
 
 struct TransferWingsContent: View {
     @ObservedObject var link: LinkHost
-    var chinW: CGFloat = 120
+    var chinW: CGFloat = 0
     var body: some View {
         WingsRow(chinW: chinW) {
             Image(systemName: "arrow.down.circle.fill")
@@ -340,13 +412,13 @@ struct TransferWingsContent: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .truncationMode(.tail)
         }
     }
 }
 
 struct IdleHintContent: View {
-    var chinW: CGFloat = 120
+    var chinW: CGFloat = 0
     var body: some View {
         WingsRow(chinW: chinW) {
             Spacer(minLength: 0)
@@ -356,39 +428,59 @@ struct IdleHintContent: View {
     }
 }
 
-/// Media slab: artwork, title/artist, and controls in the body band below
-/// the housing. The morph that swaps media in/out is the pill itself growing
-/// a body — never a content crossfade inside a fixed pill.
+/// Media slab: artwork, title/artist with live waveform, scrubber, and tactile controls.
 public struct MediaSlabContent: View {
     @ObservedObject var media: MediaEngine
 
     public init(media: MediaEngine) { self.media = media }
 
     public var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             ArtworkView(url: media.artworkURL, data: media.artworkData)
-                .frame(width: 40, height: 40)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(media.title ?? "Nothing playing")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .tracking(-0.2)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                .frame(width: 44, height: 44)
+                .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(media.title ?? "Nothing playing")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .tracking(-0.25)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if media.playing {
+                        WaveformIndicator(isPlaying: true, color: IslandPalette.media)
+                    }
+                }
                 Text([media.artist, media.appName].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.65))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                if let d = media.duration, d > 0 {
+                    HStack(spacing: 5) {
+                        Text(media.positionText)
+                            .font(.system(size: 9.5, weight: .medium, design: .rounded).monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.50))
+                        Meter(value: media.progressFraction, color: IslandPalette.media, height: 3.5)
+                            .frame(maxWidth: .infinity)
+                        Text("-" + MediaEngine.mmss(max(0, d - media.livePosition)))
+                            .font(.system(size: 9.5, weight: .medium, design: .rounded).monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.50))
+                    }
+                    .padding(.top, 1)
+                }
             }
-            Spacer(minLength: 6)
-            CompactMediaButton(system: "backward.fill", label: "Previous track") { media.previous() }
-            CompactMediaButton(system: media.playing ? "pause.fill" : "play.fill",
-                               label: media.playing ? "Pause" : "Play") { media.playPause() }
-            CompactMediaButton(system: "forward.fill", label: "Next track") { media.next() }
+            Spacer(minLength: 4)
+            HStack(spacing: 6) {
+                CompactMediaButton(system: "backward.fill", label: "Previous track") { media.previous() }
+                CompactMediaButton(system: media.playing ? "pause.fill" : "play.fill",
+                                   label: media.playing ? "Pause" : "Play",
+                                   prominent: true) { media.playPause() }
+                CompactMediaButton(system: "forward.fill", label: "Next track") { media.next() }
+            }
         }
         .padding(.horizontal, 14)
-        .frame(height: 48)
+        .frame(height: 56)
     }
 }
 
@@ -409,35 +501,52 @@ public struct ExternalSlabContent: View {
     }
 
     public var body: some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(IslandPalette.external.opacity(0.2))
-                .frame(width: 40, height: 40)
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [IslandPalette.external.opacity(0.28), IslandPalette.external.opacity(0.12)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(IslandPalette.external.opacity(0.35), lineWidth: 1)
+                )
+                .frame(width: 44, height: 44)
                 .overlay(
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(IslandPalette.external)
                 )
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
                     .tracking(-0.2)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Text(subtitle ?? source)
                     .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.65))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if let p = progress {
-                    Meter(value: p, color: IslandPalette.external)
+                    Meter(value: p, color: IslandPalette.external, height: 3.5)
                         .padding(.top, 2)
                 }
             }
+            Spacer(minLength: 4)
+            Text(source)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(IslandPalette.external.opacity(0.85))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(IslandPalette.external.opacity(0.15), in: Capsule())
         }
         .padding(.horizontal, 14)
-        .frame(height: 48)
+        .frame(height: 56)
     }
 }
 
@@ -447,10 +556,10 @@ public struct RemoteTimerPillContent: View {
     public var remaining: Double
     public var total: Double
     public var updatedAt: Date
-    public var chinW: CGFloat = 120
+    public var chinW: CGFloat
 
     public init(peer: String, remaining: Double, total: Double, updatedAt: Date,
-                chinW: CGFloat = 120) {
+                chinW: CGFloat = 0) {
         self.peer = peer
         self.remaining = remaining
         self.total = total
@@ -469,12 +578,15 @@ public struct RemoteTimerPillContent: View {
                                                       now: context.date)))
                     .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .fixedSize()
             }
         } trailing: {
             Text(peer)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.65))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.70))
                 .lineLimit(1)
+                .truncationMode(.tail)
         }
         .accessibilityHidden(true)
     }
@@ -490,16 +602,20 @@ public struct HudView: View {
     public var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(isMuted ? .white.opacity(0.40) : .white.opacity(0.95))
                 .frame(width: 22)
             Meter(value: content.value,
-                  color: isMuted ? .white.opacity(0.4) : .white.opacity(0.92),
+                  color: isMuted ? .white.opacity(0.35) : .white,
                   height: 6)
                 .frame(maxWidth: .infinity)
+            Text("\(Int((content.value * 100).rounded()))%")
+                .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.70))
+                .frame(width: 32, alignment: .trailing)
         }
         .padding(.horizontal, 16)
-        .frame(height: 40)
+        .frame(height: 44)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(accessibilityName) \(Int(content.value * 100)) percent")
     }
@@ -542,20 +658,42 @@ struct ExpandedView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().background(.white.opacity(0.08))
+            Divider()
+                .background(
+                    LinearGradient(
+                        colors: [.clear, .white.opacity(0.12), .clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 12) {
-                    NowPlayingSection(media: media)
-                    TimerSection(timer: timer)
+                VStack(spacing: 10) {
+                    // 1. Hero contextual surface
+                    if media.appName != nil {
+                        NowPlayingSection(media: media)
+                    }
+                    if timer.isActive || timer.state == .done {
+                        TimerSection(timer: timer)
+                    } else if media.appName == nil {
+                        QuickFocusSection(timer: timer)
+                    }
+
+                    // 2. Harbor File Shelf with direct drag-out
                     HarborSection(harbor: harbor)
-                    ClipboardSection(clipboard: clipboard)
-                    LinkSection(link: link)
+
+                    // 3. Quick Hub (Clipboard & iPhone Link)
+                    if clipboard.enabled || link.enabled {
+                        QuickHubSection(clipboard: clipboard, link: link)
+                    }
+
+                    // 4. Waterline external access (if any)
                     AccessSection(center: center)
-                    PrivacySection(privacy: privacy)
-                    TogglesSection(island: island, hudEngine: hudEngine)
-                    FooterRow(island: island)
+
+                    // 5. System, Preferences & Controls
+                    SystemSection(island: island, hudEngine: hudEngine, clipboard: clipboard, link: link)
                 }
                 .padding(.horizontal, 14)
+                .padding(.top, 10)
                 .padding(.bottom, 14)
             }
         }
@@ -565,94 +703,164 @@ struct ExpandedView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "water.waves")
-                .foregroundStyle(.white.opacity(0.8))
-                .accessibilityHidden(true)
-            Text("Notcher")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-            Spacer()
-            if privacy.privacyActive {
-                HStack(spacing: 4) {
-                    Image(systemName: privacy.cameraActive ? "video.fill" : "mic.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(privacy.cameraActive ? Color(red: 0.35, green: 0.82, blue: 1.0) : .orange)
-                    Text(privacy.cameraActive && privacy.micActive ? "cam · mic" : (privacy.cameraActive ? "camera" : "mic"))
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.white.opacity(0.7))
-                }
+            HStack(spacing: 6) {
+                Image(systemName: "water.waves")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [IslandPalette.external, IslandPalette.timer],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Text("Notcher")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
             }
+
+            Spacer()
+
+            if privacy.privacyActive {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(privacy.cameraActive ? Color(red: 0.35, green: 0.82, blue: 1.0) : .orange)
+                        .frame(width: 6, height: 6)
+                    Text(privacy.cameraActive && privacy.micActive ? "cam · mic" : (privacy.cameraActive ? "camera" : "mic"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(.white.opacity(0.08), in: Capsule())
+            }
+
             if let p = power.percent {
                 HStack(spacing: 4) {
-                    Image(systemName: power.charging ? "bolt.fill" : "battery.50")
-                        .font(.system(size: 10))
-                        .accessibilityHidden(true)
+                    Image(systemName: power.charging ? "bolt.fill" : "battery.75")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(power.charging ? .green : .white.opacity(0.85))
                     Text("\(Int(p))%")
-                        .font(.system(size: 11).monospacedDigit())
+                        .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.85))
                 }
-                .foregroundStyle(.white.opacity(0.7))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(.white.opacity(0.08), in: Capsule())
             }
+
             Button(action: { island.togglePin() }) {
                 Image(systemName: island.pinned ? "pin.fill" : "pin")
-                    .font(.system(size: 11))
-                    .foregroundStyle(island.pinned ? .orange : .white.opacity(0.7))
-                    .accessibilityHidden(true)
-                    .frame(width: 24, height: 24)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(island.pinned ? .orange : .white.opacity(0.70))
+                    .frame(width: 26, height: 26)
+                    .background(.white.opacity(island.pinned ? 0.16 : 0.06), in: Circle())
             }
             .buttonStyle(PressableButtonStyle())
             .accessibilityLabel(island.pinned ? "Unpin island" : "Pin island open")
+
+            Button(action: { island.collapse() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.70))
+                    .frame(width: 26, height: 26)
+                    .background(.white.opacity(0.06), in: Circle())
+            }
+            .buttonStyle(PressableButtonStyle())
+            .accessibilityLabel("Collapse island")
         }
         .padding(.horizontal, 14)
-        .frame(height: 40)
+        .frame(height: 42)
     }
 }
 
 // MARK: - Tray sections
 
-/// Hero media card: artwork, title/artist, transport, progress scrubber.
+/// Hero media card: artwork, title/artist, live waveform, transport, progress scrubber, AirPlay.
 struct NowPlayingSection: View {
     @ObservedObject var media: MediaEngine
+    @State private var isStarred = false
 
     var body: some View {
         SectionCard(title: "Now Playing", system: "music.note") {
             if media.appName != nil {
-                VStack(spacing: 10) {
-                    HStack(spacing: 12) {
+                VStack(spacing: 12) {
+                    HStack(spacing: 14) {
                         ArtworkView(url: media.artworkURL, data: media.artworkData)
-                            .frame(width: 56, height: 56)
+                            .frame(width: 60, height: 60)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(media.title ?? "Unknown track")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .tracking(-0.3)
-                                .lineLimit(1)
+                            HStack(spacing: 6) {
+                                Text(media.title ?? "Unknown track")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .tracking(-0.3)
+                                    .lineLimit(1)
+                                if media.playing {
+                                    WaveformIndicator(isPlaying: true, color: IslandPalette.media)
+                                }
+                            }
                             Text([media.artist, media.appName].compactMap { $0 }.joined(separator: " · "))
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(.white.opacity(0.6))
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white.opacity(0.65))
                                 .lineLimit(1)
                         }
                         Spacer()
                     }
-                    HStack(spacing: 6) {
-                        Text(media.positionText)
-                            .font(.system(size: 10, design: .rounded).monospacedDigit())
-                            .foregroundStyle(.white.opacity(0.5))
-                            .frame(width: 34, alignment: .leading)
-                        Meter(value: media.progressFraction, color: IslandPalette.media, height: 4)
-                        Text(media.durationText)
-                            .font(.system(size: 10, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.5))
-                            .frame(width: 34, alignment: .trailing)
+
+                    // Interactive Scrub Bar
+                    VStack(spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(media.positionText)
+                                .font(.system(size: 10.5, weight: .medium, design: .rounded).monospacedDigit())
+                                .foregroundStyle(.white.opacity(0.50))
+                                .frame(width: 36, alignment: .leading)
+                            Meter(value: media.progressFraction, color: IslandPalette.media, height: 5)
+                            Text(media.durationText)
+                                .font(.system(size: 10.5, weight: .medium, design: .rounded).monospacedDigit())
+                                .foregroundStyle(.white.opacity(0.50))
+                                .frame(width: 36, alignment: .trailing)
+                        }
                     }
-                    HStack(spacing: 18) {
+
+                    // Transport Bar
+                    HStack(spacing: 20) {
+                        Button(action: { isStarred.toggle() }) {
+                            Image(systemName: isStarred ? "star.fill" : "star")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(isStarred ? Color.yellow : Color.white.opacity(0.65))
+                                .frame(width: 30, height: 30)
+                                .background(Color.white.opacity(0.06), in: Circle())
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                        .accessibilityLabel("Favorite")
+
                         Spacer()
+
                         TrayIconButton(system: "backward.fill", label: "Previous track", action: media.previous)
+
                         TrayIconButton(system: media.playing ? "pause.fill" : "play.fill",
                                        label: media.playing ? "Pause" : "Play",
-                                       prominent: true, action: media.playPause)
+                                       prominent: true,
+                                       size: 36,
+                                       action: media.playPause)
+
                         TrayIconButton(system: "forward.fill", label: "Next track", action: media.next)
+
                         Spacer()
+
+                        Button(action: {}) {
+                            Image(systemName: "airplayaudio")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.65))
+                                .frame(width: 30, height: 30)
+                                .background(Color.white.opacity(0.06), in: Circle())
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                        .accessibilityLabel("AirPlay output")
                     }
+                    .padding(.horizontal, 4)
                 }
             } else {
                 Text("Nothing playing in Music or Spotify.")
@@ -669,108 +877,122 @@ struct TimerSection: View {
     var body: some View {
         SectionCard(title: "Timer", system: "timer") {
             if timer.isActive || timer.state == .done {
-                HStack {
-                    Text(TimerFormat.string(timer.remaining))
-                        .font(.system(size: 28, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white)
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        if !timer.label.isEmpty {
-                            Text(timer.label).font(.system(size: 11)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                VStack(spacing: 10) {
+                    HStack {
+                        Text(TimerFormat.string(timer.remaining))
+                            .font(.system(size: 30, weight: .semibold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(.white)
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            if !timer.label.isEmpty {
+                                Text(timer.label).font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                            }
+                            Text(timer.state == .done ? "Done" : (timer.state == .paused ? "Paused" : "Running"))
+                                .font(.system(size: 11, weight: .semibold)).foregroundStyle(IslandPalette.timer)
                         }
-                        Text(timer.state == .done ? "Done" : (timer.state == .paused ? "Paused" : "Running"))
-                            .font(.system(size: 11)).foregroundStyle(IslandPalette.timer)
                     }
-                }
-                Meter(value: timer.progress, color: IslandPalette.timer)
-                HStack(spacing: 8) {
-                    if timer.state == .running {
-                        TrayButton(title: "Pause", action: timer.pause)
-                    } else if timer.state == .paused {
-                        TrayButton(title: "Resume", action: timer.resume)
+                    Meter(value: timer.progress, color: IslandPalette.timer, height: 5)
+                    HStack(spacing: 8) {
+                        if timer.state == .running {
+                            TrayButton(title: "Pause", action: timer.pause)
+                        } else if timer.state == .paused {
+                            TrayButton(title: "Resume", action: timer.resume)
+                        }
+                        TrayButton(title: "Cancel", action: timer.cancel)
                     }
-                    TrayButton(title: "Cancel", action: timer.cancel)
                 }
             } else {
-                HStack(spacing: 6) {
-                    ForEach([5, 15, 25, 60], id: \.self) { m in
-                        Chip(title: "\(m)m") { timer.start(seconds: Double(m * 60), label: "Focus") }
-                    }
-                    TextField("min", text: Binding(
-                        get: { timer.draftMinutes },
-                        set: { timer.draftMinutes = $0 }
-                    ))
-                        .accessibilityLabel("Custom timer minutes")
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
-                        .frame(width: 44)
-                        .padding(5)
-                        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                        .onSubmit { startCustom() }
-                    Chip(title: "Start", prominent: true, action: startCustom)
-                }
+                QuickFocusRow(timer: timer)
             }
+        }
+    }
+}
+
+struct QuickFocusSection: View {
+    @ObservedObject var timer: TimerEngine
+
+    var body: some View {
+        SectionCard(title: "Focus Timer", system: "timer") {
+            QuickFocusRow(timer: timer)
+        }
+    }
+}
+
+struct QuickFocusRow: View {
+    @ObservedObject var timer: TimerEngine
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach([5, 15, 25, 45, 60], id: \.self) { m in
+                Chip(title: "\(m)m") { timer.start(seconds: Double(m * 60), label: "Focus") }
+            }
+            TextField("min", text: Binding(
+                get: { timer.draftMinutes },
+                set: { timer.draftMinutes = $0 }
+            ))
+            .accessibilityLabel("Custom timer minutes")
+            .textFieldStyle(.plain)
+            .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .frame(width: 42)
+            .padding(5)
+            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .onSubmit { startCustom() }
+
+            Chip(title: "Start", prominent: true, action: startCustom)
         }
     }
 
     private func startCustom() {
         let m = Double(timer.draftMinutes) ?? 0
         guard m > 0 else { return }
-        timer.start(seconds: m * 60, label: "Timer")
+        timer.start(seconds: m * 60, label: "Focus")
     }
 }
 
 struct HarborSection: View {
     @ObservedObject var harbor: HarborStore
+
     var body: some View {
-        SectionCard(title: "Harbor · \(harbor.count)/\(HarborStore.maxItems)", system: "tray.full") {
+        SectionCard(title: "Harbor File Shelf · \(harbor.count)/\(HarborStore.maxItems)", system: "tray.full") {
             if harbor.items.isEmpty {
-                Text("Drag files onto the notch to park them here.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.45))
+                VStack(spacing: 8) {
+                    Image(systemName: "arrow.down.doc")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.35))
+                    Text("Drag files onto the notch to park them here.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.60))
+                    Text("Pull them out when your destination is ready.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.35))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.12), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                )
             } else {
-                VStack(spacing: 4) {
-                    ForEach(harbor.items) { item in
-                        HStack(spacing: 8) {
-                            Image(systemName: HarborSection.icon(for: item.kind))
-                                .font(.system(size: 12))
-                                .foregroundStyle(.white.opacity(0.7))
-                                .accessibilityHidden(true)
-                                .frame(width: 18)
-                            Text(item.name)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer()
-                            Button(action: { harbor.remove(id: item.id) }) {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .foregroundStyle(.white.opacity(0.5))
-                                    .accessibilityHidden(true)
-                                    .frame(width: 18, height: 18)
-                            }
-                            .buttonStyle(PressableButtonStyle())
-                            .accessibilityLabel("Remove \(item.name)")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(harbor.items) { item in
+                            HarborItemTile(item: item, harbor: harbor)
                         }
-                        .contentShape(Rectangle())
-                        .onTapGesture { harbor.reveal(id: item.id) }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Reveal \(item.name) in Finder")
                     }
+                    .padding(.vertical, 2)
                 }
             }
-            Toggle("Park new screenshots", isOn: Binding(
+
+            Toggle("Auto-park new screenshots", isOn: Binding(
                 get: { UserDefaults.standard.object(forKey: ShotWatch.watchShotsKey) as? Bool ?? true },
                 set: { UserDefaults.standard.set($0, forKey: ShotWatch.watchShotsKey) }
             ))
-            .font(.system(size: 11.5))
-            .foregroundStyle(.white.opacity(0.7))
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(.white.opacity(0.70))
             .toggleStyle(.switch)
-            .tint(.orange)
-            .accessibilityLabel("Automatically park new screenshots from the Desktop")
+            .tint(IslandPalette.transfer)
         }
     }
 
@@ -786,18 +1008,100 @@ struct HarborSection: View {
     }
 }
 
+struct HarborItemTile: View {
+    var item: HarborStore.Item
+    @ObservedObject var harbor: HarborStore
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack(alignment: .topTrailing) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(tileColor.opacity(0.18))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(tileColor.opacity(0.35), lineWidth: 1)
+                    )
+                    .frame(width: 48, height: 48)
+                    .overlay(
+                        Image(systemName: HarborSection.icon(for: item.kind))
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(tileColor)
+                    )
+
+                if isHovered {
+                    Button(action: { harbor.remove(id: item.id) }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.white.opacity(0.85), Color.black.opacity(0.70))
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: 4, y: -4)
+                }
+            }
+
+            Text(item.name)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.90))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(width: 68)
+        }
+        .padding(6)
+        .background(isHovered ? Color.white.opacity(0.08) : Color.white.opacity(0.03),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onHover { isHovered = $0 }
+        .onTapGesture { harbor.reveal(id: item.id) }
+        .onDrag {
+            if let url = harbor.resolve(item) {
+                return NSItemProvider(object: url as NSURL)
+            }
+            return NSItemProvider()
+        }
+        .help("Click to reveal in Finder · Drag to move anywhere")
+    }
+
+    private var tileColor: Color {
+        switch item.kind {
+        case "image": return Color(red: 0.25, green: 0.65, blue: 1.0)
+        case "video": return Color(red: 0.70, green: 0.40, blue: 0.95)
+        case "audio": return Color(red: 1.0, green: 0.35, blue: 0.55)
+        case "pdf": return Color(red: 1.0, green: 0.35, blue: 0.30)
+        case "folder": return Color(red: 1.0, green: 0.75, blue: 0.25)
+        default: return Color(red: 0.55, green: 0.60, blue: 0.95)
+        }
+    }
+}
+
+struct QuickHubSection: View {
+    @ObservedObject var clipboard: ClipboardEngine
+    @ObservedObject var link: LinkHost
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if clipboard.enabled {
+                ClipboardSection(clipboard: clipboard)
+            }
+            if link.enabled {
+                LinkSection(link: link)
+            }
+        }
+    }
+}
+
 struct ClipboardSection: View {
     @ObservedObject var clipboard: ClipboardEngine
+
     var body: some View {
         if clipboard.enabled {
             SectionCard(title: "Clipboard · \(clipboard.entries.count)/\(ClipboardEngine.maxEntries)", system: "doc.on.clipboard") {
                 if clipboard.entries.isEmpty {
                     Text("Copied text gathers here (opt-in, local only).")
-                        .font(.system(size: 12))
+                        .font(.system(size: 11.5))
                         .foregroundStyle(.white.opacity(0.45))
                 } else {
                     VStack(spacing: 4) {
-                        ForEach(clipboard.entries) { entry in
+                        ForEach(clipboard.entries.prefix(4)) { entry in
                             Button {
                                 clipboard.copy(entry)
                             } label: {
@@ -807,22 +1111,20 @@ struct ClipboardSection: View {
                                         .foregroundStyle(IslandPalette.clipboard)
                                         .frame(width: 16)
                                     Text(entry.preview)
-                                        .font(.system(size: 12, design: .rounded))
+                                        .font(.system(size: 11.5, design: .rounded))
                                         .foregroundStyle(.white)
                                         .lineLimit(1)
                                     Spacer()
                                     Text(relative(entry.addedAt))
-                                        .font(.system(size: 10, design: .rounded).monospacedDigit())
-                                        .foregroundStyle(.white.opacity(0.4))
+                                        .font(.system(size: 9.5, design: .rounded).monospacedDigit())
+                                        .foregroundStyle(.white.opacity(0.40))
                                     Image(systemName: "arrow.up.doc.on.clipboard")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.white.opacity(0.5))
+                                        .font(.system(size: 9.5))
+                                        .foregroundStyle(.white.opacity(0.50))
                                 }
-                                .padding(.vertical, 3)
+                                .padding(.vertical, 4)
                                 .padding(.horizontal, 6)
-                                .background(.white.opacity(0.04),
-                                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .contentShape(Rectangle())
+                                .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Copy \(entry.preview) to clipboard")
@@ -831,7 +1133,7 @@ struct ClipboardSection: View {
                 }
                 HStack {
                     Button("Clear history") { clipboard.clear() }
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.55))
                         .buttonStyle(.plain)
                     Spacer()
@@ -855,96 +1157,55 @@ struct LinkSection: View {
 
     var body: some View {
         SectionCard(title: "iPhone Link", system: "iphone") {
-            Toggle(isOn: Binding(get: { link.enabled }, set: { link.setEnabled($0) })) {
-                Text(link.peers.isEmpty ? "Waiting for iPhone…" : "\(link.peers.map(\.deviceName).joined(separator: ", ")) nearby")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white)
-            }
-            .toggleStyle(.switch)
-            .tint(.green)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(link.peers.isEmpty ? Color.white.opacity(0.2) : Color.green)
+                        .frame(width: 7, height: 7)
+                    Text(link.peers.isEmpty ? "Waiting for iPhone…" : "\(link.peers.map(\.deviceName).joined(separator: ", ")) nearby")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1)
+                }
 
-            if link.enabled {
                 HStack {
-                    Text("Pairing code")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.white.opacity(0.7))
-                    Spacer()
-                    Text(link.code)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
+                    Text("Code: \(link.code)")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundStyle(.white)
-                        .tracking(3)
+                        .tracking(2)
+                    Spacer()
                     Button(action: {
                         if link.confirmRegen { link.regenerateCode() }
                         else { link.armRegenConfirm() }
                     }) {
                         Text(link.confirmRegen ? "Sure?" : "New")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(link.confirmRegen ? .red : .white.opacity(0.7))
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(link.confirmRegen ? .red : .white.opacity(0.70))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(PressableButtonStyle())
                     .accessibilityLabel("Generate new pairing code")
                 }
+
                 if let r = link.remoteTimer {
                     HStack(spacing: 6) {
-                        Image(systemName: "timer").font(.system(size: 11)).foregroundStyle(IslandPalette.timer).accessibilityHidden(true)
+                        Image(systemName: "timer")
+                            .font(.system(size: 11))
+                            .foregroundStyle(IslandPalette.timer)
+                            .accessibilityHidden(true)
                         TimelineView(.periodic(from: .now, by: 1.0)) { context in
                             Text("\(r.peer): \(TimerFormat.string(liveRemaining(base: r.remaining, updatedAt: r.updatedAt, now: context.date)))")
                                 .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.7))
                         }
-                        Spacer()
                     }
                 }
-                if link.peers.isEmpty {
-                    Text("Open the Notcher companion on your iPhone (same Wi-Fi) and enter this code.")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.white.opacity(0.45))
-                } else {
-                    HStack {
-                        TextField("Send text to iPhone…", text: Binding(
-                            get: { link.draftMessage },
-                            set: { link.draftMessage = $0 }
-                        ))
-                            .accessibilityLabel("Message to send to iPhone")
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.white)
-                            .padding(7)
-                            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                            .onSubmit(sendMessage)
-                        Chip(title: "Send", prominent: true, action: sendMessage)
-                        Chip(title: "File…") { sendFile() }
-                    }
-                }
-            } else {
-                Text("Link is off. Nothing leaves this Mac.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.white.opacity(0.45))
             }
-        }
-    }
-
-    private func sendMessage() {
-        let t = link.draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return }
-        link.sendText(t)
-        link.draftMessage = ""
-    }
-
-    private func sendFile() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            link.sendFile(url)
         }
     }
 }
 
-/// Waterline access: pending consent cards first, then the revocable grant
-/// list. This is the permission surface for IslandKit.
+/// Waterline access: pending consent cards first, then the revocable grant list.
 struct AccessSection: View {
     @ObservedObject var center: ExternalCenter
 
@@ -984,89 +1245,67 @@ struct AccessSection: View {
     }
 }
 
-struct PrivacySection: View {
-    @ObservedObject var privacy: PrivacyWatch
-    var body: some View {
-        SectionCard(title: "Privacy sensors", system: "eye.slash") {
-            HStack(spacing: 12) {
-                sensor("Camera", icon: "video.fill", active: privacy.cameraActive,
-                       color: Color(red: 0.35, green: 0.82, blue: 1.0))
-                sensor("Microphone", icon: "mic.fill", active: privacy.micActive, color: .orange)
-                Spacer()
-                Text("live, public APIs")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.35))
-            }
-        }
-    }
-
-    private func sensor(_ name: String, icon: String, active: Bool, color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(active ? color : Color.white.opacity(0.15))
-                .frame(width: 7, height: 7)
-                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: active)
-            Image(systemName: icon)
-                .font(.system(size: 10.5))
-                .foregroundStyle(.white.opacity(active ? 0.9 : 0.35))
-            Text(active ? "\(name) in use" : name)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(active ? 0.9 : 0.5))
-        }
-    }
-}
-
-/// Toggle center for the new surfaces (replaces scattered options).
-struct TogglesSection: View {
+/// Preferences & System Controls
+struct SystemSection: View {
     @ObservedObject var island: IslandState
     @ObservedObject var hudEngine: HudEngine
+    @ObservedObject var clipboard: ClipboardEngine
+    @ObservedObject var link: LinkHost
 
     var body: some View {
-        SectionCard(title: "Surfaces", system: "switch.2") {
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Volume & brightness HUD at the notch", isOn: Binding(
+        SectionCard(title: "Preferences & System", system: "slider.horizontal.3") {
+            VStack(spacing: 6) {
+                Toggle("Volume & brightness HUD at notch", isOn: Binding(
                     get: { hudEngine.enabled },
                     set: { hudEngine.setEnabled($0) }
                 ))
-                .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.7))
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.80))
                 .toggleStyle(.switch)
                 .tint(IslandPalette.timer)
-                Toggle("Remember clipboard history", isOn: Binding(
-                    get: { clipboardBinding },
-                    set: { ClipboardEngine.setEnabled($0) }
+
+                Toggle("Clipboard history shelf", isOn: Binding(
+                    get: { clipboard.enabled },
+                    set: { clipboard.setEnabled($0) }
                 ))
-                .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.7))
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.80))
                 .toggleStyle(.switch)
                 .tint(IslandPalette.clipboard)
-            }
-        }
-    }
 
-    private var clipboardBinding: Bool {
-        UserDefaults.standard.object(forKey: ClipboardEngine.enabledKey) as? Bool ?? false
-    }
-}
-
-struct FooterRow: View {
-    @ObservedObject var island: IslandState
-    var body: some View {
-        HStack {
-            Toggle("Open at Login", isOn: Binding(
-                get: { island.loginEnabled },
-                set: { island.commitLogin($0) }
-            ))
-                .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.7))
+                Toggle("iPhone link sync", isOn: Binding(
+                    get: { link.enabled },
+                    set: { link.setEnabled($0) }
+                ))
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.80))
                 .toggleStyle(.switch)
                 .tint(.green)
-                .onAppear { island.refreshLogin() }
-            Spacer()
-            Button("Quit Notcher") { NSApp.terminate(nil) }
-                .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.7))
-                .buttonStyle(PressableButtonStyle())
+
+                Divider().background(.white.opacity(0.08))
+
+                HStack {
+                    Toggle("Open at Login", isOn: Binding(
+                        get: { island.loginEnabled },
+                        set: { island.commitLogin($0) }
+                    ))
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.80))
+                    .toggleStyle(.switch)
+                    .tint(.green)
+                    .onAppear { island.refreshLogin() }
+
+                    Spacer()
+
+                    Button("Quit Notcher") { NSApp.terminate(nil) }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.60))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                        .buttonStyle(PressableButtonStyle())
+                }
+            }
         }
     }
 }
@@ -1082,22 +1321,32 @@ struct SectionCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: system)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.45))
                     .accessibilityHidden(true)
                 Text(title.uppercased())
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.white.opacity(0.45))
-                    .tracking(0.4)
+                    .tracking(0.5)
             }
             content
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+        )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.white.opacity(0.06), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.12), Color.white.opacity(0.04)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1
+                )
         )
     }
 }
@@ -1229,15 +1478,16 @@ struct TrayIconButton: View {
     var system: String
     var label: String
     var prominent = false
+    var size: CGFloat = 30
     var action: () -> Void
     var body: some View {
         Button(action: action) {
             Image(systemName: system)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: prominent ? 13 : 11, weight: .semibold))
                 .foregroundStyle(prominent ? .black : .white)
                 .accessibilityHidden(true)
-                .frame(width: 28, height: 28)
-                .background(prominent ? AnyShapeStyle(.white) : AnyShapeStyle(.white.opacity(0.1)),
+                .frame(width: size, height: size)
+                .background(prominent ? AnyShapeStyle(.white) : AnyShapeStyle(.white.opacity(0.10)),
                             in: Circle())
         }
         .buttonStyle(PressableButtonStyle())
@@ -1263,15 +1513,16 @@ struct Chip: View {
 struct CompactMediaButton: View {
     var system: String
     var label: String
+    var prominent: Bool = false
     var action: () -> Void
     var body: some View {
         Button(action: action) {
             Image(systemName: system)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.white)
+                .font(.system(size: prominent ? 11 : 9.5, weight: .semibold))
+                .foregroundStyle(prominent ? .black : .white)
                 .accessibilityHidden(true)
-                .frame(width: 24, height: 24)
-                .background(.white.opacity(0.10), in: Circle())
+                .frame(width: prominent ? 28 : 24, height: prominent ? 28 : 24)
+                .background(prominent ? AnyShapeStyle(.white) : AnyShapeStyle(.white.opacity(0.10)), in: Circle())
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityLabel(label)

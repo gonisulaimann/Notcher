@@ -63,44 +63,44 @@ public struct IslandMetrics: Equatable, Animatable, Sendable {
     public static let canvasSize = CGSize(width: 440, height: 594)
 
     public static func idle(_ layout: NotchGeometry.Layout) -> IslandMetrics {
-        let w = max(180, layout.notchWidth + 72)
+        let w = max(184, layout.notchWidth + 60)
         let chin = layout.hasNotch ? layout.topInset : 0
-        let lip: CGFloat = layout.hasNotch ? 8 : 30
+        let lip: CGFloat = layout.hasNotch ? 4 : 26
         return IslandMetrics(width: w, chinH: chin, chinW: w,
-                             shoulder: 0, bodyH: lip, corner: layout.hasNotch ? 8 : 15)
+                             shoulder: 0, bodyH: lip, corner: layout.hasNotch ? 6 : 14)
     }
 
     /// Slim "wings" compact: content flanks the housing. Used by data pill
     /// activities (timer, remote timer, transfer).
     public static func compactSlim(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 0
-        let w = layout.notchWidth + 80
+        let w = max(330, layout.notchWidth + 130)
         return IslandMetrics(width: w, chinH: chin, chinW: w,
-                             shoulder: 0, bodyH: 34, corner: 20)
+                             shoulder: 0, bodyH: 36, corner: 18)
     }
 
-    /// Full "slab" compact: a body blooms below the housing — room for
+    /// Full "slab" compact: an organic body blooms below the housing — room for
     /// artwork, two lines of text and controls. Media and external pills.
     public static func compactSlab(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 0
-        let w = max(344, layout.notchWidth + 165)
+        let w = max(368, layout.notchWidth + 180)
         return IslandMetrics(width: w, chinH: chin, chinW: layout.notchWidth + 24,
-                             shoulder: 20, bodyH: 48, corner: 24)
+                             shoulder: 22, bodyH: 56, corner: 26)
     }
 
     public static func expanded(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 6
         return IslandMetrics(width: IslandMetrics.canvasSize.width,
                              chinH: chin, chinW: layout.notchWidth + 24,
-                             shoulder: 26, bodyH: IslandMetrics.canvasSize.height - chin - 26,
-                             corner: 26)
+                             shoulder: 24, bodyH: 486 - chin - 24,
+                             corner: 28)
     }
 
     /// HUD capsule: a small slab under the housing for volume feedback.
     public static func hud(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 0
-        return IslandMetrics(width: 240, chinH: chin, chinW: layout.notchWidth + 24,
-                             shoulder: 18, bodyH: 46, corner: 22)
+        return IslandMetrics(width: 260, chinH: chin, chinW: layout.notchWidth + 24,
+                             shoulder: 18, bodyH: 44, corner: 22)
     }
 
     /// Overture surfaces: melt beats collapse to the idle blend; teaching
@@ -112,9 +112,9 @@ public struct IslandMetrics: Equatable, Animatable, Sendable {
             return .idle(layout)
         case .greetings, .vocabTimer, .vocabFile, .vocabMedia:
             let chin = layout.hasNotch ? layout.topInset : 0
-            let w = max(344, layout.notchWidth + 165)
+            let w = max(368, layout.notchWidth + 180)
             return IslandMetrics(width: w, chinH: chin, chinW: layout.notchWidth + 24,
-                                 shoulder: 20, bodyH: 44, corner: 24)
+                                 shoulder: 22, bodyH: 52, corner: 26)
         }
     }
 
@@ -170,23 +170,38 @@ public struct IslandMetrics: Equatable, Animatable, Sendable {
         let chinPad = dx + m.chinPad
         let chinRight = chinPad + m.chinW
         let right = dx + m.width
+        let c = m.corner
 
         p.move(to: CGPoint(x: chinPad, y: 0))
         p.addLine(to: CGPoint(x: chinRight, y: 0))                       // housing top edge
         p.addLine(to: CGPoint(x: chinRight, y: m.chinH))                 // housing right edge
-        // Right shoulder: bloom from housing edge out to the body's right edge.
-        p.addQuadCurve(to: CGPoint(x: right, y: m.chinH + m.shoulder),
-                       control: CGPoint(x: chinRight, y: m.chinH + m.shoulder))
-        p.addLine(to: CGPoint(x: right, y: h - m.corner))                // right edge
-        p.addQuadCurve(to: CGPoint(x: right - m.corner, y: h),
-                       control: CGPoint(x: right, y: h))                 // bottom-right corner
-        p.addLine(to: CGPoint(x: dx + m.corner, y: h))                   // bottom edge
-        p.addQuadCurve(to: CGPoint(x: dx, y: h - m.corner),
-                       control: CGPoint(x: dx, y: h))                    // bottom-left corner
+        // Right shoulder: S-curve bloom from housing edge out to body right edge
+        if m.shoulder > 0 && right > chinRight {
+            p.addCurve(to: CGPoint(x: right, y: m.chinH + m.shoulder),
+                       control1: CGPoint(x: chinRight, y: m.chinH + m.shoulder * 0.5),
+                       control2: CGPoint(x: right, y: m.chinH + m.shoulder * 0.5))
+        } else {
+            p.addLine(to: CGPoint(x: right, y: m.chinH + m.shoulder))
+        }
+        p.addLine(to: CGPoint(x: right, y: max(m.chinH + m.shoulder, h - c))) // right edge
+        // Smooth continuous bottom-right corner (squircle)
+        p.addCurve(to: CGPoint(x: right - c, y: h),
+                   control1: CGPoint(x: right, y: h - c * 0.45),
+                   control2: CGPoint(x: right - c * 0.45, y: h))
+        p.addLine(to: CGPoint(x: dx + c, y: h))                          // bottom edge
+        // Smooth continuous bottom-left corner (squircle)
+        p.addCurve(to: CGPoint(x: dx, y: max(m.chinH + m.shoulder, h - c)),
+                   control1: CGPoint(x: dx + c * 0.45, y: h),
+                   control2: CGPoint(x: dx, y: h - c * 0.45))
         p.addLine(to: CGPoint(x: dx, y: m.chinH + m.shoulder))           // left edge
-        // Left shoulder mirrors right.
-        p.addQuadCurve(to: CGPoint(x: chinPad, y: m.chinH),
-                       control: CGPoint(x: chinPad, y: m.chinH + m.shoulder))
+        // Left shoulder: S-curve bloom back to housing
+        if m.shoulder > 0 && right > chinRight {
+            p.addCurve(to: CGPoint(x: chinPad, y: m.chinH),
+                       control1: CGPoint(x: dx, y: m.chinH + m.shoulder * 0.5),
+                       control2: CGPoint(x: chinPad, y: m.chinH + m.shoulder * 0.5))
+        } else {
+            p.addLine(to: CGPoint(x: chinPad, y: m.chinH))
+        }
         p.addLine(to: CGPoint(x: chinPad, y: 0))                         // housing left edge
         p.closeSubpath()
         return p

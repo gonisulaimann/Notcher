@@ -723,3 +723,64 @@ after hardware, the iPhone story told in motion rather than paragraphs.
   checksum + mount verification) — see dist/Notcher-0.5.0.dmg.
 - NOT TESTED: taptest on real iPhone hardware; brightness meter on
   external displays (no hardware here); notarization (no Developer ID).
+
+## Phase 9: 0.6.0 — Liquid Island Redesign (Droppy Benchmark)
+
+### Overview
+
+Full design and interaction overhaul to elevate Notcher from a functional prototype to an Apple-grade Dynamic Island experience benchmarked against **Droppy** (`getdroppy.app`), while preserving Notcher's single-activity focus, native zero-dependency Swift architecture, and rock-solid hit-testing core.
+
+### Visual & Architectural Upgrades
+
+1. **Organic Silhouette & G1/G2 Curvature (`Sources/NotcherKit/IslandSurface.swift`)**:
+   - Replaced sharp quadratic curves with continuous cubic Bézier S-curves (`addCurve` with vertical tangent continuity `dy > 0, dx = 0`) connecting the camera housing to body shoulders.
+   - Upgraded bottom corner radii to continuous Apple squircles.
+   - Refined preset dimensions:
+     - `idle`: 4pt subtle living seal under camera housing.
+     - `compactSlim`: 330pt wide, flush top menu bar alignment (`shoulder: 0, chinW: w`), eliminating stepped notch gaps.
+     - `compactSlab`: 368×56pt, 22pt organic shoulder bloom, 26pt corner.
+     - `expanded`: 440×486pt curated luxury hub.
+     - `hud`: 260×44pt centered feedback capsule.
+   - Hit-testing (`IslandPanel.runHitTest`) verified with 0 click-through regressions across all geometries.
+
+2. **Multi-Layer Liquid Glass Material (`Sources/NotcherKit/IslandView.swift`)**:
+   - `SurfaceView` upgraded from flat smoked acrylic to a layered glass material:
+     - Base `.popover` vibrancy material.
+     - Luminous dark gradient (`rgba(20,20,26,0.70)` to `rgba(8,8,10,0.85)`).
+     - Top-weighted specular rim highlight (`white.opacity(0.18)` to `white.opacity(0.04)`).
+     - Subsurface top crest reflection line (`white.opacity(0.24)`).
+     - Dual-stage shadow: crisp 4pt contact shadow + deep 16pt ambient drop shadow.
+     - Pulsing amber glow when file drop target is active.
+
+3. **Un-Cramped Compact Views (`Sources/NotcherKit/IslandView.swift`)**:
+   - Fixed numeral line-wrapping bug (e.g., `"25:0\n0"`) by replacing rigid columns with flexible `HStack` using `minCenterGap` and `.lineLimit(1).fixedSize()`.
+   - Created `WaveformIndicator`: animated 3-bar live equalizer powered by `TimelineView(.animation(paused: !isPlaying))` with mathematical sine functions — 0% CPU when paused.
+   - Upgraded `MediaSlabContent`: 44×44 artwork with drop shadow, track title + waveform, artist + app name, micro-scrubber with elapsed/remaining times, and tactile playback controls (prev, prominent play/pause, next).
+
+4. **Curated Luxury Expanded Hub (`Sources/NotcherKit/IslandView.swift`)**:
+   - Redesigned from a 600pt monolithic card dump into a 486pt hierarchical command center:
+     - **Header**: Tide glyph, live privacy chip (camera/mic dots), battery percentage chip with charging bolt, pin toggle, and close button.
+     - **Hero Zone**: Now Playing card (60×60 artwork, scrubber, star favorite, large 36pt play/pause, AirPlay) or Focus Timer card with instant preset chips (`5m`, `15m`, `25m`, `45m`, `60m`).
+     - **Harbor File Shelf**: Horizontal scrolling shelf of parked files with distinct file-type badges, hover dismiss, Finder reveal, and native `.onDrag` support allowing files to be dragged directly out of the notch into any macOS app.
+     - **Quick Hub**: Opt-in clipboard preview with 1-tap copy, iPhone Link pairing code and status.
+     - **System Preferences**: Toggles for notch HUD, clipboard history, launch at login, and quit.
+   - Constrained content height to `metrics.bodyH` and masked `contentLayer` to `MorphShape(m: metrics)` to completely prevent canvas overflow.
+
+### Verification Matrix (All 100% Green)
+
+- `NotcherProbe hittest`: 8/8 PASS (body center, chin covers housing, corners, boundary slop, idle isolation).
+- `NotcherProbe stress`: 12/12 PASS (truth table x200, flash bursts, hover spam, pin parity, timer lifecycle, drop target, screen storm, harbor storage, tail frame stability).
+- `NotcherProbe sensors`: 12/12 PASS (clipboard dedupe, memory clearing, volume listener, privacy readers, artwork cache).
+- `NotcherProbe godmode`: 8/8 PASS (overture beat morphs).
+- `NotcherProbe overlap`: 6/6 PASS (window levels, scrim, layer sovereignty).
+- `LinkSelfTest`: 8/8 PASS (AES-GCM crypto, handshake, chunking, framing).
+- `IslandSnapshot`: 14 offscreen renders verified (zero housing bleed, crisp typography, liquid glass depth).
+
+### Release Deliverable
+
+- Version bumped to `0.6.0` in `VERSION`.
+- Universal binary (`arm64` + `x86_64`) built and packaged via `Scripts/release.sh`.
+- Final DMG: `dist/Notcher-0.6.0.dmg`
+  - SHA256: `722eda49599d53ce12596dd6da9f7334268413005f6cf5d046894b2ed00bc5b5`
+  - Verified mounted and bundle-checked cleanly on macOS 27.2 beta.
+
