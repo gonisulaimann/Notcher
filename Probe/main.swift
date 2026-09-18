@@ -732,6 +732,18 @@ struct Probe {
         /// Waits pump the main runloop (never block it: the intent hop needs
         /// the MainActor, which lives on this thread).
         static func runSocket() {
+            // Fresh-install path every run: ExternalCenter persists grants to
+            // UserDefaults, so snapshot and clear them first (a previous run's
+            // approval would otherwise make step 1 show instead of pend).
+            let d = UserDefaults.standard
+            let savedGrants = d.dictionary(forKey: "external.grants")
+            let savedNames = d.dictionary(forKey: "external.names")
+            d.removeObject(forKey: "external.grants")
+            d.removeObject(forKey: "external.names")
+            defer {
+                if let g = savedGrants { d.set(g, forKey: "external.grants") }
+                if let n = savedNames { d.set(n, forKey: "external.names") }
+            }
             final class Inbox: @unchecked Sendable {
                 var text = ""
                 let lock = NSLock()
