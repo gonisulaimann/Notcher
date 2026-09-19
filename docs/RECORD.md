@@ -1042,3 +1042,22 @@ A comprehensive architectural and design overhaul transforming Notcher into a bu
 - `NotcherProbe godmode`: 7/7 PASS
 - `NotcherProbe overlap`: 6/6 PASS
 - `IslandSnapshot`: 12/12 verified high-fidelity offscreen snapshot renders.
+
+## Phase 17: 0.7.6 — Hover Stabilization & Zero-Thrashing Window Architecture
+
+### Root Cause Analysis & Fixes
+1. **Compositor Thrashing in `updateFrame` Eliminated**:
+   - `panel.animator().setFrame` previously fought with SwiftUI's spring animation, causing backing-store invalidations, coordinate jumps in `locationInWindow`, and dropped `mouseMoved` events mid-flight.
+   - Replaced with immediate window expansion (transparent backing store) so SwiftUI has the complete canvas to blossom into via its native spring physics. Window shrinkage on collapse is deferred by 0.30s until the spring completes.
+2. **Hover Exit Grace Period**:
+   - Extended `hoverExited` delay from 60ms to 240ms. Prevents rapid oscillation/flicker when cursor travels across child subviews or during spring animations.
+3. **`isIdle` Compact Mode False-Positive Fix**:
+   - Fixed `shapeContains` where `metrics.bodyH <= 12` falsely identified compact mode (`bodyH = 10` on notch Macs) as idle, rejecting clicks and hovers over the bottom 10pt lip of the pill.
+   - Replaced with strict width-based discriminator (`metrics.width <= (layout.hasNotch ? layout.notchWidth + 40 : 260)`).
+4. **ZStack Motion Animation Synchronization**:
+   - Bound `.animation(island.motionAnimation, value: metrics)` directly to the root `ZStack`, ensuring container frame and `contentShape` animate synchronously with surface and content layers.
+
+### Verification Matrix (100% Green)
+- `NotcherProbe hittest`: 16/16 PASS
+- `NotcherProbe stress`: 11/11 PASS (337 presentCalls, 0 steady tail frame changes)
+- `NotcherProbe overlap`: 6/6 PASS

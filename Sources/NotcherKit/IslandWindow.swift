@@ -106,6 +106,7 @@ public final class IslandController {
     private var scrim: NSPanel?
     private var scrimVisible = false
     private var hitView: ShapeHitView?
+    private var frameShrinkWork: DispatchWorkItem?
     nonisolated(unsafe) private var monitors: [Any] = []
 
     public var onOutsideClick: (() -> Void)?
@@ -144,7 +145,7 @@ public final class IslandController {
         panel.isMovable = false
         panel.ignoresMouseEvents = false
         panel.hitTestCheck = { [weak self] pt in
-            self?.shapeContains(windowPoint: pt, slop: 0) ?? false
+            self?.shapeContains(windowPoint: pt, slop: 2) ?? false
         }
         placeCanvas()
 
@@ -218,17 +219,33 @@ public final class IslandController {
     }
 
     public func updateFrame(animate: Bool) {
+        frameShrinkWork?.cancel()
+        frameShrinkWork = nil
         let targetFrame = frameFor(metrics: metrics)
         if panel.frame.equalTo(targetFrame) { return }
 
-        if animate && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.28
-                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
-                panel.animator().setFrame(targetFrame, display: true)
-            }
-        } else {
+        // When growing (e.g. idle -> compact, compact -> expanded):
+        // Expand immediately without AppKit animator() so SwiftUI has the full canvas to
+        // blossom into via its native spring physics with zero backing-store thrashing.
+        if targetFrame.height >= panel.frame.height && targetFrame.width >= panel.frame.width {
             panel.setFrame(targetFrame, display: true)
+        } else {
+            // When shrinking (e.g. expanded -> compact, compact -> idle):
+            // Keep window canvas large enough during the SwiftUI spring morph (~0.28s),
+            // then size down to hug the collapsed island bounds.
+            if animate && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                let work = DispatchWorkItem { [weak self] in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        let currentTarget = self.frameFor(metrics: self.metrics)
+                        self.panel.setFrame(currentTarget, display: true)
+                    }
+                }
+                frameShrinkWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: work)
+            } else {
+                panel.setFrame(targetFrame, display: true)
+            }
         }
     }
 
@@ -321,17 +338,17 @@ public final class IslandController {
 
         // In idle mode (collapsed with no live activity body), enforce strict top-edge proximity.
         // Sweeping across the menu bar or below the notch falls through cleanly to macOS.
-        let isIdle = (!expandedVisible && metrics.bodyH <= 12)
+        let isIdle = (!expandedVisible && metrics.width <= (layout.hasNotch ? layout.notchWidth + 40 : 260))
         if isIdle {
             let midX = bounds.width / 2
             let totalW = metrics.totalWidth
             if layout.hasNotch {
                 let notchHalfW = max(layout.notchWidth / 2, metrics.chinW / 2)
-                let inNotchHousing = (tl.y >= 0 && tl.y <= layout.topInset && abs(tl.x - midX) <= notchHalfW)
-                let inTopEdgeStrip = (tl.y >= 0 && tl.y <= 3.0 && abs(tl.x - midX) <= (totalW / 2))
+                let inNotchHousing = (tl.y >= 0 && tl.y <= (layout.topInset + 6) && abs(tl.x - midX) <= (notchHalfW + 10))
+                let inTopEdgeStrip = (tl.y >= 0 && tl.y <= 4.0 && abs(tl.x - midX) <= (totalW / 2))
                 return inNotchHousing || inTopEdgeStrip
             } else {
-                return (tl.y >= 0 && tl.y <= 3.0 && abs(tl.x - midX) <= (totalW / 2))
+                return (tl.y >= 0 && tl.y <= 4.0 && abs(tl.x - midX) <= (totalW / 2))
             }
         }
 

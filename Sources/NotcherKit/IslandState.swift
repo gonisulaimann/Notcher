@@ -182,9 +182,9 @@ public final class IslandState: ObservableObject {
     public func hoverExited() {
         hoverWork?.cancel()
         hoverExitWork?.cancel()
-        // Un-hovering snaps back instantly without frame drops or oscillations.
+        // Grace period prevents micro-dropouts when moving across UI elements or during springs.
         guard mode == .expanded, !pinned else { return }
-        let delay: TimeInterval = reduceMotion ? 0.02 : 0.06
+        let delay: TimeInterval = reduceMotion ? 0.05 : 0.24
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self, self.mode == .expanded, !self.pinned else { return }

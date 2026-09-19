@@ -220,6 +220,7 @@ public struct IslandRootView: View {
             island.pointerInside = hovering
             if hovering { island.hoverEntered() } else { island.hoverExited() }
         }
+        .animation(island.motionAnimation, value: metrics)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(island.contentAnimation, value: island.mode)
         .animation(island.contentAnimation, value: island.activity)
