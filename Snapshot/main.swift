@@ -104,6 +104,7 @@ struct Snap {
         shoot("compact-timer", dark: true)
 
         // 3. compact, media live (slab; uses whatever Music/Spotify report now)
+        media.setForTesting(playing: true, title: "Good Luck, Babe!", artist: "Chappell Roan", appName: "Music", duration: 219.0, position: 84.0)
         island.mode = .compact; island.activity = .media
         shoot("compact-media", dark: true)
 

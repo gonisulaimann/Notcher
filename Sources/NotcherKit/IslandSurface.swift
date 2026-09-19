@@ -29,18 +29,28 @@ public struct IslandMetrics: Equatable, Animatable, Sendable {
     public var bodyH: CGFloat
     /// Bottom corner radius.
     public var corner: CGFloat
+    /// Horizontal flare width for the organic G1/G2 meniscus curve into the top bezel.
+    public var flareX: CGFloat
+    /// Vertical flare height for the organic G1/G2 meniscus curve from the top bezel.
+    public var flareY: CGFloat
 
     public init(width: CGFloat, chinH: CGFloat, chinW: CGFloat,
-                shoulder: CGFloat, bodyH: CGFloat, corner: CGFloat) {
+                shoulder: CGFloat, bodyH: CGFloat, corner: CGFloat,
+                flareX: CGFloat = 0, flareY: CGFloat = 0) {
         self.width = width
         self.chinH = chinH
         self.chinW = chinW
         self.shoulder = shoulder
         self.bodyH = bodyH
         self.corner = corner
+        self.flareX = flareX
+        self.flareY = flareY
     }
 
     public var height: CGFloat { chinH + shoulder + bodyH }
+
+    /// Total visual width including both outward top bezel meniscus flares.
+    public var totalWidth: CGFloat { width + 2 * flareX }
 
     /// Top y of the body content band (below housing + shoulder).
     public var contentTop: CGFloat { chinH + shoulder }
@@ -60,52 +70,61 @@ public struct IslandMetrics: Equatable, Animatable, Sendable {
     /// Fixed canvas the single window is sized to. Every surface renders
     /// top-anchored inside it; regions outside the current shape are
     /// transparent AND click-through (shaped hit-testing).
-    public static let canvasSize = CGSize(width: 440, height: 594)
+    public static let canvasSize = CGSize(width: 620, height: 594)
 
     public static func idle(_ layout: NotchGeometry.Layout) -> IslandMetrics {
-        let w = layout.hasNotch ? max(184, layout.notchWidth + 12) : 160
+        let w = layout.hasNotch ? max(184, layout.notchWidth + 8) : 160
         let chin = layout.hasNotch ? layout.topInset : 0
         let lip: CGFloat = layout.hasNotch ? 3 : 14
+        let corner: CGFloat = layout.hasNotch ? 12 : 10
+        let flareX: CGFloat = layout.hasNotch ? 18 : 14
+        let flareY: CGFloat = layout.hasNotch ? 16 : 14
         return IslandMetrics(width: w, chinH: chin, chinW: w,
-                             shoulder: 0, bodyH: lip, corner: layout.hasNotch ? 8 : 7)
+                             shoulder: 0, bodyH: lip, corner: corner,
+                             flareX: flareX, flareY: flareY)
     }
 
     /// Slim "wings" compact: content flanks the housing. Used by data pill
     /// activities (timer, remote timer, transfer).
     public static func compactSlim(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 0
-        let w = layout.hasNotch ? max(375, layout.notchWidth + 196) : 320
-        let lip: CGFloat = layout.hasNotch ? 8 : 38
+        let w = layout.hasNotch ? max(440, layout.notchWidth + 260) : 440
+        let lip: CGFloat = layout.hasNotch ? 10 : 42
         return IslandMetrics(width: w, chinH: chin, chinW: w,
-                             shoulder: 0, bodyH: lip, corner: layout.hasNotch ? 20 : 19)
+                             shoulder: 0, bodyH: lip, corner: 21,
+                             flareX: 22, flareY: 18)
     }
 
     /// Full "slab" compact: an organic capsule hanging from the top bezel.
     /// Media and external pills.
     public static func compactSlab(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 0
-        let w = layout.hasNotch ? max(380, layout.notchWidth + 200) : 340
-        let lip: CGFloat = layout.hasNotch ? 10 : 40
+        let w = layout.hasNotch ? max(490, layout.notchWidth + 290) : 490
+        let lip: CGFloat = layout.hasNotch ? 10 : 42
         return IslandMetrics(width: w, chinH: chin, chinW: w,
-                             shoulder: 0, bodyH: lip, corner: layout.hasNotch ? 21 : 20)
+                             shoulder: 0, bodyH: lip, corner: 21,
+                             flareX: 22, flareY: 18)
     }
 
     /// Expanded: a fluid, Apple-grade living surface with utility panels.
     /// Perfectly proportioned under the notch with zero clipping.
     public static func expanded(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 0
-        let w = min(420, max(390, layout.notchWidth + 210))
+        let w = layout.hasNotch ? max(540, layout.notchWidth + 340) : 520
+        let bodyH: CGFloat = layout.hasNotch ? 110 : 142
         return IslandMetrics(width: w,
                              chinH: chin, chinW: w,
-                             shoulder: 0, bodyH: 215,
-                             corner: 28)
+                             shoulder: 0, bodyH: bodyH,
+                             corner: 28,
+                             flareX: 24, flareY: 20)
     }
 
     /// HUD capsule: a sleek capsule anchored to the top bezel for volume feedback.
     public static func hud(_ layout: NotchGeometry.Layout) -> IslandMetrics {
         let chin = layout.hasNotch ? layout.topInset : 0
-        return IslandMetrics(width: 260, chinH: chin, chinW: 260,
-                             shoulder: 0, bodyH: 22, corner: 22)
+        return IslandMetrics(width: 280, chinH: chin, chinW: 280,
+                             shoulder: 0, bodyH: 22, corner: 22,
+                             flareX: 18, flareY: 16)
     }
 
     /// Overture surfaces: melt beats collapse to the idle blend; teaching
@@ -117,9 +136,10 @@ public struct IslandMetrics: Equatable, Animatable, Sendable {
             return .idle(layout)
         case .greetings, .vocabTimer, .vocabFile, .vocabMedia:
             let chin = layout.hasNotch ? layout.topInset : 0
-            let w = max(360, layout.notchWidth + 175)
+            let w = max(440, layout.notchWidth + 250)
             return IslandMetrics(width: w, chinH: chin, chinW: w,
-                                 shoulder: 0, bodyH: 42, corner: 24)
+                                 shoulder: 0, bodyH: 42, corner: 24,
+                                 flareX: 22, flareY: 18)
         }
     }
 
@@ -140,24 +160,38 @@ public struct IslandMetrics: Equatable, Animatable, Sendable {
     // MARK: - Animatable
 
     public typealias AnimatableData = AnimatablePair<
-        CGFloat,
-        AnimatablePair<CGFloat,
-        AnimatablePair<CGFloat,
-        AnimatablePair<CGFloat,
-        AnimatablePair<CGFloat, CGFloat> > > > >
+        AnimatablePair<CGFloat, CGFloat>,
+        AnimatablePair<
+            AnimatablePair<CGFloat, CGFloat>,
+            AnimatablePair<
+                AnimatablePair<CGFloat, CGFloat>,
+                AnimatablePair<CGFloat, CGFloat>
+            >
+        >
+    >
 
     public var animatableData: AnimatableData {
         get {
-            AnimatablePair(width, AnimatablePair(chinH, AnimatablePair(chinW,
-                AnimatablePair(shoulder, AnimatablePair(bodyH, corner)))))
+            AnimatablePair(
+                AnimatablePair(width, chinH),
+                AnimatablePair(
+                    AnimatablePair(chinW, shoulder),
+                    AnimatablePair(
+                        AnimatablePair(bodyH, corner),
+                        AnimatablePair(flareX, flareY)
+                    )
+                )
+            )
         }
         set {
-            width = newValue.first
-            chinH = newValue.second.first
-            chinW = newValue.second.second.first
-            shoulder = newValue.second.second.second.first
-            bodyH = newValue.second.second.second.second.first
-            corner = newValue.second.second.second.second.second
+            width = newValue.first.first
+            chinH = newValue.first.second
+            chinW = newValue.second.first.first
+            shoulder = newValue.second.first.second
+            bodyH = newValue.second.second.first.first
+            corner = newValue.second.second.first.second
+            flareX = newValue.second.second.second.first
+            flareY = newValue.second.second.second.second
         }
     }
 
@@ -171,30 +205,74 @@ public struct IslandMetrics: Equatable, Animatable, Sendable {
         var p = Path()
         let dx = (rect.width - m.width) / 2
         let h = m.height
-        let chinPad = dx + m.chinPad
-        let chinRight = chinPad + m.chinW
-        let right = dx + m.width
         let c = m.corner
+        let fx = m.flareX
+        let fy = m.flareY
+
+        let left = dx
+        let right = dx + m.width
+        let topFlareLeft = left - fx
+        let topFlareRight = right + fx
+
+        // Organic G1/G2 meniscus: top flares outward into the top bezel
+        if fx > 0 && fy > 0 {
+            p.move(to: CGPoint(x: topFlareLeft, y: 0))
+            p.addLine(to: CGPoint(x: topFlareRight, y: 0))
+
+            // Right concave shoulder: horizontally tangent to top bezel, vertically tangent to flank
+            p.addCurve(to: CGPoint(x: right, y: fy),
+                       control1: CGPoint(x: right + fx * 0.45, y: 0),
+                       control2: CGPoint(x: right, y: fy * 0.45))
+
+            // Right flank down to bottom-right corner start
+            p.addLine(to: CGPoint(x: right, y: max(fy, h - c)))
+
+            // Bottom-right corner squircle
+            p.addCurve(to: CGPoint(x: right - c, y: h),
+                       control1: CGPoint(x: right, y: h - c * 0.45),
+                       control2: CGPoint(x: right - c * 0.45, y: h))
+
+            // Bottom edge across
+            p.addLine(to: CGPoint(x: left + c, y: h))
+
+            // Bottom-left corner squircle
+            p.addCurve(to: CGPoint(x: left, y: max(fy, h - c)),
+                       control1: CGPoint(x: left + c * 0.45, y: h),
+                       control2: CGPoint(x: left, y: h - c * 0.45))
+
+            // Left flank up
+            p.addLine(to: CGPoint(x: left, y: fy))
+
+            // Left concave shoulder: vertically tangent to flank, horizontally tangent to bezel
+            p.addCurve(to: CGPoint(x: topFlareLeft, y: 0),
+                       control1: CGPoint(x: left, y: fy * 0.45),
+                       control2: CGPoint(x: topFlareLeft + fx * 0.45, y: 0))
+
+            p.closeSubpath()
+            return p
+        }
 
         // Pure unified capsule (shoulder == 0 and chinW >= width):
         // Anchors directly to the top screen bezel, continuous squircle downward.
         if m.shoulder == 0 && m.chinW >= m.width {
-            p.move(to: CGPoint(x: dx, y: 0))
+            p.move(to: CGPoint(x: left, y: 0))
             p.addLine(to: CGPoint(x: right, y: 0))
             p.addLine(to: CGPoint(x: right, y: max(0, h - c)))
             p.addCurve(to: CGPoint(x: right - c, y: h),
                        control1: CGPoint(x: right, y: h - c * 0.45),
                        control2: CGPoint(x: right - c * 0.45, y: h))
-            p.addLine(to: CGPoint(x: dx + c, y: h))
-            p.addCurve(to: CGPoint(x: dx, y: max(0, h - c)),
-                       control1: CGPoint(x: dx + c * 0.45, y: h),
-                       control2: CGPoint(x: dx, y: h - c * 0.45))
-            p.addLine(to: CGPoint(x: dx, y: 0))
+            p.addLine(to: CGPoint(x: left + c, y: h))
+            p.addCurve(to: CGPoint(x: left, y: max(0, h - c)),
+                       control1: CGPoint(x: left + c * 0.45, y: h),
+                       control2: CGPoint(x: left, y: h - c * 0.45))
+            p.addLine(to: CGPoint(x: left, y: 0))
             p.closeSubpath()
             return p
         }
 
         // Stepped path with S-curves (used when synthetic tests provide shoulder > 0):
+        let chinPad = dx + m.chinPad
+        let chinRight = chinPad + m.chinW
         p.move(to: CGPoint(x: chinPad, y: 0))
         p.addLine(to: CGPoint(x: chinRight, y: 0))                       // housing top edge
         p.addLine(to: CGPoint(x: chinRight, y: m.chinH))                 // housing right edge
@@ -209,14 +287,14 @@ public struct IslandMetrics: Equatable, Animatable, Sendable {
         p.addCurve(to: CGPoint(x: right - c, y: h),
                    control1: CGPoint(x: right, y: h - c * 0.45),
                    control2: CGPoint(x: right - c * 0.45, y: h))
-        p.addLine(to: CGPoint(x: dx + c, y: h))                          // bottom edge
-        p.addCurve(to: CGPoint(x: dx, y: max(m.chinH + m.shoulder, h - c)),
-                   control1: CGPoint(x: dx + c * 0.45, y: h),
-                   control2: CGPoint(x: dx, y: h - c * 0.45))
-        p.addLine(to: CGPoint(x: dx, y: m.chinH + m.shoulder))           // left edge
+        p.addLine(to: CGPoint(x: left + c, y: h))                          // bottom edge
+        p.addCurve(to: CGPoint(x: left, y: max(m.chinH + m.shoulder, h - c)),
+                   control1: CGPoint(x: left + c * 0.45, y: h),
+                   control2: CGPoint(x: left, y: h - c * 0.45))
+        p.addLine(to: CGPoint(x: left, y: m.chinH + m.shoulder))           // left edge
         if m.shoulder > 0 && right > chinRight {
             p.addCurve(to: CGPoint(x: chinPad, y: m.chinH),
-                       control1: CGPoint(x: dx, y: m.chinH + m.shoulder * 0.5),
+                       control1: CGPoint(x: left, y: m.chinH + m.shoulder * 0.5),
                        control2: CGPoint(x: chinPad, y: m.chinH + m.shoulder * 0.5))
         } else {
             p.addLine(to: CGPoint(x: chinPad, y: m.chinH))

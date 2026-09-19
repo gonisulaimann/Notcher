@@ -1003,3 +1003,42 @@ A comprehensive architectural and design overhaul transforming Notcher into a bu
 - `NotcherProbe godmode`: 7/7 PASS
 - `NotcherProbe overlap`: 6/6 PASS
 - `IslandSnapshot`: 12/12 verified high-fidelity offscreen snapshot renders.
+
+## Phase 16: 0.7.5 — Primary Visual Reference Redesign & Organic G1/G2 Hardware Meniscus
+
+### Architectural Overhaul Highlights
+1. **Organic G1/G2 Meniscus Fillet (`IslandSurface.swift` / `MorphShape`)**:
+   - Engineered mathematical cubic Bezier transition curves (`flareX`, `flareY`) at the top screen bezel (`y = 0`).
+   - The surface flaring smoothly departs the vertical flank tangents and arrives horizontally tangent to the screen's top bezel, eliminating sharp 90-degree corners.
+   - Restores true hardware fusion: the MacBook camera housing and Notcher island form an uninterrupted, continuous physical surface.
+
+2. **Compact State Parity with Visual Reference (`media_1789775074045.jpg`)**:
+   - Left wing: Album artwork (26x26, 6pt continuous squircle, drop shadow) + stacked Title ("Good Luck, Babe!") and Artist ("Chappell Roan") in SF Pro Rounded with ample breathing room.
+   - Center: Physical camera notch housing clearance.
+   - Right wing: Dynamic cyan live equalizer waveform + 22x22 circular play/pause button (`||` / `>`).
+   - Symmetrical contextual pill variants for Focus Timer (`24:36`), Privacy Indicators (`Camera in use`), Battery Charging (`82%`), File Harbor, and Phone/Calls.
+
+3. **Expanded State Parity with Visual Reference**:
+   - Streamlined living player card (~142pt height, 540pt body width) with 58x58 album artwork on the left.
+   - Top section: Stacked bold track title and secondary artist on the left; live cyan audio waveform and transport cluster (`<<`, hero 30x30 play/pause circle, `>>`, `airplayaudio`, `...`) on the right.
+   - Bottom section: Full-span scrubber with elapsed time (`1:24`), cyan/glass meter track, and Apple-style remaining time (`-2:15`).
+   - Dedicated `...` switcher for instant access to Clipboard History, Quick Toggles, and Shortcuts panels.
+
+4. **Zero Dead Zones & Layer Sovereignty**:
+   - `NSPanel` frames anchored on `metrics.totalWidth = width + 2 * flareX` with exact shaped hit-testing.
+   - Strict pass-through for all clicks outside the organic meniscus boundary.
+   - Maintained Layer 26 sovereignty with 0 steady tail frame changes.
+
+### Verification Matrix (100% Green)
+- `NotcherProbe hittest`: 16/16 PASS (includes meniscus fillet boundary & concave miss tests)
+- `NotcherProbe stress`: 11/11 PASS (337 presentCalls, 0 steady tail frame changes)
+- `NotcherProbe persistence`: 4/4 PASS
+- `NotcherProbe sensors`: 12/12 PASS
+- `NotcherProbe firstrun`: 6/6 PASS
+- `NotcherProbe external`: 9/9 PASS
+- `NotcherProbe socket`: 5/5 PASS
+- `NotcherProbe poweredge`: 4/4 PASS
+- `NotcherProbe naming`: 5/5 PASS
+- `NotcherProbe godmode`: 7/7 PASS
+- `NotcherProbe overlap`: 6/6 PASS
+- `IslandSnapshot`: 12/12 verified high-fidelity offscreen snapshot renders.

@@ -122,9 +122,9 @@ public final class IslandController {
         metrics = IslandMetrics.idle(layout)
 
         let initialFrame = NSRect(
-            x: ((layout.hasNotch ? layout.housingRect.midX : screen.frame.midX) - metrics.width / 2).rounded(),
+            x: ((layout.hasNotch ? layout.housingRect.midX : screen.frame.midX) - metrics.totalWidth / 2).rounded(),
             y: screen.frame.maxY - metrics.height,
-            width: metrics.width,
+            width: metrics.totalWidth,
             height: metrics.height
         )
 
@@ -210,11 +210,11 @@ public final class IslandController {
     public func frameFor(metrics: IslandMetrics) -> NSRect {
         let f = screen.frame
         let centerX = layout.hasNotch ? layout.housingRect.midX : f.midX
+        let totalW = max(160, metrics.totalWidth)
         let h = max(24, metrics.height)
-        let w = max(160, metrics.width)
-        let x = (centerX - w / 2).rounded()
+        let x = (centerX - totalW / 2).rounded()
         let y = f.maxY - h
-        return NSRect(x: x, y: y, width: w, height: h)
+        return NSRect(x: x, y: y, width: totalW, height: h)
     }
 
     public func updateFrame(animate: Bool) {
@@ -324,13 +324,14 @@ public final class IslandController {
         let isIdle = (!expandedVisible && metrics.bodyH <= 12)
         if isIdle {
             let midX = bounds.width / 2
+            let totalW = metrics.totalWidth
             if layout.hasNotch {
                 let notchHalfW = max(layout.notchWidth / 2, metrics.chinW / 2)
                 let inNotchHousing = (tl.y >= 0 && tl.y <= layout.topInset && abs(tl.x - midX) <= notchHalfW)
-                let inTopEdgeStrip = (tl.y >= 0 && tl.y <= 3.0 && abs(tl.x - midX) <= (metrics.width / 2))
+                let inTopEdgeStrip = (tl.y >= 0 && tl.y <= 3.0 && abs(tl.x - midX) <= (totalW / 2))
                 return inNotchHousing || inTopEdgeStrip
             } else {
-                return (tl.y >= 0 && tl.y <= 3.0 && abs(tl.x - midX) <= (metrics.width / 2))
+                return (tl.y >= 0 && tl.y <= 3.0 && abs(tl.x - midX) <= (totalW / 2))
             }
         }
 

@@ -262,4 +262,19 @@ public final class MediaEngine: ObservableObject {
         if error != nil { return nil }
         return result
     }
+
+    public func setForTesting(playing: Bool = true,
+                              title: String? = "Good Luck, Babe!",
+                              artist: String? = "Chappell Roan",
+                              appName: String? = "Music",
+                              duration: Double? = 219.0,
+                              position: Double = 84.0) {
+        self.playing = playing
+        self.title = title
+        self.artist = artist
+        self.appName = appName
+        self.duration = duration
+        self.position = position
+        self.positionAt = Date()
+    }
 }

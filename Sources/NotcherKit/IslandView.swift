@@ -124,7 +124,7 @@ struct SurfaceView: View {
                 )
             }
         }
-        .frame(width: metrics.width, height: metrics.height, alignment: .top)
+        .frame(width: metrics.totalWidth, height: metrics.height, alignment: .top)
         .mask(MorphShape(m: metrics))
         .overlay(
             // 6. Subtle inner borders & dynamic desktop-adaptive specular highlights:
@@ -140,7 +140,7 @@ struct SurfaceView: View {
                                     .init(color: .clear, location: 0.0),
                                     .init(color: .clear, location: 0.18),
                                     .init(color: Color.white.opacity(0.04), location: 0.40),
-                                    .init(color: Color.white.opacity(pointerInside ? 0.18 : 0.12), location: 1.0)
+                                    .init(color: Color.white.opacity(pointerInside ? 0.20 : 0.12), location: 1.0)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -151,8 +151,8 @@ struct SurfaceView: View {
                 .allowsHitTesting(false)
         )
         // 7. Soft dual ambient shadows: contact shadow + soft ambient spread
-        .shadow(color: Color.black.opacity(0.28), radius: 4, x: 0, y: 2)
-        .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 10)
+        .shadow(color: Color.black.opacity(0.32), radius: 4, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.20), radius: 24, x: 0, y: 10)
     }
 }
 
@@ -214,7 +214,7 @@ public struct IslandRootView: View {
             surfaceLayer
             contentLayer
         }
-        .frame(width: metrics.width, height: metrics.height, alignment: .top)
+        .frame(width: metrics.totalWidth, height: metrics.height, alignment: .top)
         .contentShape(MorphShape(m: metrics))
         .onHover { hovering in
             island.pointerInside = hovering
@@ -240,13 +240,14 @@ public struct IslandRootView: View {
                     pointerInside: island.pointerInside,
                     isCharging: power.charging,
                     isLowBattery: (power.percent ?? 100) < 20 && !power.charging)
-            .frame(width: metrics.width, height: metrics.height, alignment: .top)
+            .frame(width: metrics.totalWidth, height: metrics.height, alignment: .top)
             .animation(island.motionAnimation, value: metrics)
     }
 
     private var contentLayer: some View {
         content
             .frame(width: metrics.width, height: metrics.height, alignment: .top)
+            .frame(width: metrics.totalWidth, height: metrics.height, alignment: .center)
             .mask(MorphShape(m: metrics))
             .animation(island.motionAnimation, value: metrics)
     }
@@ -410,23 +411,16 @@ struct ChargingFlashContent: View {
 
     var body: some View {
         WingsRow(chinW: chinW) {
-            ZStack {
-                Circle()
-                    .fill(Color.green.opacity(0.25))
-                    .frame(width: 18, height: 18)
+            HStack(spacing: 6) {
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.green)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color(red: 0.20, green: 0.84, blue: 0.60))
+                Text(percent.map { "\(Int($0))%" } ?? (text.isEmpty ? "Charging" : text))
+                    .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(Color(red: 0.20, green: 0.84, blue: 0.60))
             }
-            Text("Charging")
-                .font(.system(size: 12.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
         } trailing: {
-            if let pct = percent {
-                Text("\(Int(pct))%")
-                    .font(.system(size: 12.5, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.green)
-            }
+            EmptyView()
         }
     }
 }
@@ -442,13 +436,15 @@ public struct LiveActivitySlabContent: View {
 
     public var body: some View {
         WingsRow(chinW: chinW) {
-            Image(systemName: live.icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(iconColor)
-            Text(live.title)
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
+            HStack(spacing: 6) {
+                Image(systemName: live.icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(iconColor)
+                Text(live.title)
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
         } trailing: {
             if let trail = live.trailingText, !trail.isEmpty {
                 Text(trail)
@@ -456,7 +452,7 @@ public struct LiveActivitySlabContent: View {
                     .foregroundStyle(.white)
             } else if let sub = live.subtitle {
                 Text(sub)
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(.white.opacity(0.70))
             }
         }
@@ -479,15 +475,18 @@ struct FlashContent: View {
     var chinW: CGFloat = 0
     var body: some View {
         WingsRow(chinW: chinW) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.95))
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.95))
+                Text(text)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         } trailing: {
-            Text(text)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            EmptyView()
         }
     }
 }
@@ -497,20 +496,42 @@ struct TimerWingsContent: View {
     var chinW: CGFloat = 0
     var body: some View {
         WingsRow(chinW: chinW) {
-            Image(systemName: "timer")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(IslandPalette.timer)
-            Text(TimerFormat.string(timer.remaining))
-                .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .fixedSize()
+            HStack(spacing: 6) {
+                ZStack {
+                    Circle()
+                        .fill(Color(red: 0.96, green: 0.62, blue: 0.04).opacity(0.20))
+                        .frame(width: 22, height: 22)
+                    Circle()
+                        .trim(from: 0, to: timer.progress)
+                        .stroke(Color(red: 0.96, green: 0.62, blue: 0.04), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .frame(width: 18, height: 18)
+                        .rotationEffect(.degrees(-90))
+                    Image(systemName: "timer")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color(red: 0.96, green: 0.62, blue: 0.04))
+                }
+                Text(TimerFormat.string(timer.remaining))
+                    .font(.system(size: 13.5, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
         } trailing: {
-            Text(timer.label.isEmpty ? "Focus" : timer.label)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.70))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            Button(action: {
+                if timer.state == .paused { timer.resume() }
+                else { timer.pause() }
+            }) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.14))
+                        .frame(width: 22, height: 22)
+                    Image(systemName: timer.state == .paused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .buttonStyle(PressableButtonStyle())
+            .accessibilityLabel(timer.state == .paused ? "Resume" : "Pause")
         }
     }
 }
@@ -520,15 +541,35 @@ struct TransferWingsContent: View {
     var chinW: CGFloat = 0
     var body: some View {
         WingsRow(chinW: chinW) {
-            Image(systemName: "arrow.down.circle.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(IslandPalette.transfer)
+            HStack(spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.blue.opacity(0.30))
+                        .frame(width: 18, height: 18)
+                    Image(systemName: "doc.fill")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
+                }
+                Text(link.receiving.map { "Receiving \($0.fileName)" } ?? "Receiving 3 files")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         } trailing: {
-            Text(link.receiving.map { "Receiving \($0.fileName)" } ?? "Incoming from iPhone")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.18), lineWidth: 2)
+                    .frame(width: 16, height: 16)
+                Circle()
+                    .trim(from: 0, to: link.receiving.map { $0.total > 0 ? Double($0.got) / Double($0.total) : 0.65 } ?? 0.65)
+                    .stroke(Color(red: 0.35, green: 0.65, blue: 1.0), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .frame(width: 16, height: 16)
+                    .rotationEffect(.degrees(-90))
+                Circle()
+                    .fill(Color(red: 0.35, green: 0.65, blue: 1.0))
+                    .frame(width: 4, height: 4)
+            }
         }
     }
 }
@@ -545,9 +586,9 @@ struct IdleHintContent: View {
 }
 
 /// Media slab: minimal, un-cluttered collapsed single-activity context flanking the notch.
-/// Leading: album artwork (or music glyph) with smooth 6pt corners and subtle shadow.
+/// Leading: album artwork (26x26, 6pt squircle) + Title and Artist in SF Pro Rounded.
 /// Center: physical camera housing band.
-/// Trailing: subtle live audio waveform equalizer.
+/// Trailing: live audio waveform equalizer + circular play/pause button.
 public struct MediaSlabContent: View {
     @ObservedObject var media: MediaEngine
     var chinW: CGFloat = 0
@@ -559,11 +600,41 @@ public struct MediaSlabContent: View {
 
     public var body: some View {
         WingsRow(chinW: chinW) {
-            ArtworkView(url: media.artworkURL, data: media.artworkData, cornerRadius: 6)
-                .frame(width: 24, height: 24)
-                .shadow(color: .black.opacity(0.40), radius: 3, y: 1)
+            HStack(spacing: 8) {
+                ArtworkView(url: media.artworkURL, data: media.artworkData, cornerRadius: 6)
+                    .frame(width: 26, height: 26)
+                    .shadow(color: .black.opacity(0.40), radius: 3, y: 1)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(media.title ?? "Not Playing")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Text(media.artist ?? (media.appName ?? "Music"))
+                        .font(.system(size: 10.5, weight: .regular, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.65))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
         } trailing: {
-            WaveformIndicator(isPlaying: media.playing, color: IslandPalette.media)
+            HStack(spacing: 10) {
+                WaveformIndicator(isPlaying: media.playing, color: Color(red: 0.22, green: 0.74, blue: 0.98))
+
+                Button(action: { media.playPause() }) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.14))
+                            .frame(width: 22, height: 22)
+                        Image(systemName: media.playing ? "pause.fill" : "play.fill")
+                            .font(.system(size: 8.5, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityLabel(media.playing ? "Pause" : "Play")
+            }
         }
     }
 }
@@ -756,37 +827,34 @@ struct ExpandedView: View {
         self.onInteract = onInteract
     }
 
-    var body: some View {
-        VStack(spacing: 6) {
-            header
+    @State private var showUtilities = false
 
-            Group {
-                switch selectedTab {
-                case .active:
-                    activePanel
-                case .clipboard:
-                    ClipboardPanel(clipboard: clipboard)
-                case .toggles:
-                    QuickTogglesPanel(hudEngine: hudEngine, clipboard: clipboard)
-                case .shortcuts:
-                    SystemShortcutsPanel()
+    var body: some View {
+        Group {
+            if !showUtilities && selectedTab == .active {
+                activePanel
+            } else {
+                VStack(spacing: 6) {
+                    header
+
+                    Group {
+                        switch selectedTab {
+                        case .active:
+                            activePanel
+                        case .clipboard:
+                            ClipboardPanel(clipboard: clipboard)
+                        case .toggles:
+                            QuickTogglesPanel(hudEngine: hudEngine, clipboard: clipboard)
+                        case .shortcuts:
+                            SystemShortcutsPanel()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
         }
-        .mask(
-            LinearGradient(
-                stops: [
-                    .init(color: .white, location: 0.0),
-                    .init(color: .white, location: 0.90),
-                    .init(color: .white.opacity(0.0), location: 1.0)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
         .onTapGesture { onInteract() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -796,30 +864,49 @@ struct ExpandedView: View {
         if let live = link.liveActivity {
             LiveActivityExpanded(live: live)
         } else if media.appName != nil {
-            NowPlayingExpanded(media: media)
+            NowPlayingExpanded(media: media, onMore: {
+                withAnimation(.spring(response: 0.30, dampingFraction: 0.82)) {
+                    showUtilities.toggle()
+                }
+            })
         } else if timer.isActive || timer.state == .done {
-            TimerExpanded(timer: timer)
+            TimerExpanded(timer: timer, onMore: {
+                withAnimation(.spring(response: 0.30, dampingFraction: 0.82)) {
+                    showUtilities.toggle()
+                }
+            })
         } else if !harbor.items.isEmpty {
             HarborExpanded(harbor: harbor)
         } else {
-            StandbyExpanded(harbor: harbor, timer: timer)
+            StandbyExpanded(harbor: harbor, timer: timer, onMore: {
+                withAnimation(.spring(response: 0.30, dampingFraction: 0.82)) {
+                    showUtilities.toggle()
+                }
+            })
         }
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 5) {
-                Image(systemName: "water.waves")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(IslandPalette.external)
-                Text("Notcher")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+            Button(action: {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                    showUtilities = false
+                    selectedTab = .active
+                }
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("Player")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(IslandPalette.external)
             }
+            .buttonStyle(PressableButtonStyle())
 
             Spacer()
 
-            // Dynamic segmented tab pill switcher (icon-only for inactive, icon+label for active)
+            // Dynamic segmented tab pill switcher
             HStack(spacing: 2) {
                 ForEach(Tab.allCases) { tab in
                     Button(action: {
@@ -832,7 +919,7 @@ struct ExpandedView: View {
                                 .font(.system(size: 9, weight: .semibold))
                             if selectedTab == tab {
                                 Text(tab.rawValue)
-                                    .font(.system(size: 9.5, weight: .semibold))
+                                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
                                     .fixedSize()
                             }
                         }
@@ -853,44 +940,6 @@ struct ExpandedView: View {
             .background(Color.white.opacity(0.06), in: Capsule())
 
             Spacer()
-
-            if privacy.privacyActive {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(privacy.cameraActive ? Color(red: 0.35, green: 0.82, blue: 1.0) : .orange)
-                        .frame(width: 5, height: 5)
-                    Text(privacy.cameraActive && privacy.micActive ? "cam·mic" : (privacy.cameraActive ? "cam" : "mic"))
-                        .font(.system(size: 9.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.80))
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.white.opacity(0.08), in: Capsule())
-            }
-
-            if let p = power.percent {
-                HStack(spacing: 3) {
-                    Image(systemName: power.charging ? "bolt.fill" : "battery.75")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(power.charging ? .green : .white.opacity(0.80))
-                    Text("\(Int(p))%")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.80))
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.white.opacity(0.08), in: Capsule())
-            }
-
-            Button(action: { island.togglePin() }) {
-                Image(systemName: island.pinned ? "pin.fill" : "pin")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(island.pinned ? .orange : .white.opacity(0.60))
-                    .frame(width: 22, height: 22)
-                    .background(.white.opacity(island.pinned ? 0.16 : 0.05), in: Circle())
-            }
-            .buttonStyle(PressableButtonStyle())
-            .accessibilityLabel(island.pinned ? "Unpin island" : "Pin island open")
 
             Button(action: { island.collapse() }) {
                 Image(systemName: "xmark")
@@ -1375,135 +1424,233 @@ struct SystemShortcutsPanel: View {
 
 struct NowPlayingExpanded: View {
     @ObservedObject var media: MediaEngine
-    @State private var isStarred = false
+    var onMore: (() -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 12) {
-                ArtworkView(url: media.artworkURL, data: media.artworkData)
-                    .frame(width: 44, height: 44)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+        HStack(alignment: .center, spacing: 14) {
+            // Left: Large Album Artwork (58x58 with smooth 12pt corner radius)
+            ArtworkView(url: media.artworkURL, data: media.artworkData, cornerRadius: 12)
+                .frame(width: 58, height: 58)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(color: .black.opacity(0.45), radius: 8, x: 0, y: 3)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(media.title ?? "Unknown track")
-                            .font(.system(size: 13, weight: .semibold))
+            // Right: Living Info & Controls Stack
+            VStack(alignment: .leading, spacing: 10) {
+                // Top Row: Stacked (Title + Artist) on left, Spacer, Waveform + Controls on right
+                HStack(alignment: .center, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(media.title ?? "Not Playing")
+                            .font(.system(size: 14.5, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
-                            .tracking(-0.2)
                             .lineLimit(1)
-                        if media.playing {
-                            WaveformIndicator(isPlaying: true, color: IslandPalette.media)
-                        }
+                            .truncationMode(.tail)
+                        Text(media.artist ?? (media.appName ?? "Music"))
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.65))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
-                    Text([media.artist, media.appName].compactMap { $0 }.joined(separator: " · "))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.60))
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 4)
-            }
 
-            // Scrub Bar
-            VStack(spacing: 2) {
-                Meter(value: media.progressFraction, color: IslandPalette.media, height: 3.5)
-                HStack {
+                    Spacer(minLength: 8)
+
+                    WaveformIndicator(isPlaying: media.playing, color: Color(red: 0.22, green: 0.74, blue: 0.98))
+                        .padding(.trailing, 2)
+
+                    // Transport Cluster
+                    HStack(spacing: 8) {
+                        Button(action: { media.previous() }) {
+                            Image(systemName: "backward.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.80))
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                        .accessibilityLabel("Previous")
+
+                        Button(action: { media.playPause() }) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white.opacity(0.18))
+                                    .frame(width: 30, height: 30)
+                                Image(systemName: media.playing ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                        .accessibilityLabel(media.playing ? "Pause" : "Play")
+
+                        Button(action: { media.next() }) {
+                            Image(systemName: "forward.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.80))
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                        .accessibilityLabel("Next")
+
+                        Button(action: {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension")!)
+                        }) {
+                            Image(systemName: "airplayaudio")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.60))
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                        .accessibilityLabel("AirPlay")
+
+                        Button(action: { onMore?() }) {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.60))
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                        .accessibilityLabel("More")
+                    }
+                }
+
+                // Bottom Row: Scrubber Bar with Timestamps (Position on left, Remaining on right)
+                HStack(spacing: 8) {
                     Text(media.positionText)
-                        .font(.system(size: 9, weight: .medium, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.45))
-                    Spacer()
-                    Text(media.durationText)
-                        .font(.system(size: 9, weight: .medium, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.45))
+                        .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.60))
+
+                    Meter(value: media.progressFraction,
+                          color: Color(red: 0.22, green: 0.74, blue: 0.98),
+                          height: 3)
+                        .frame(maxWidth: .infinity)
+
+                    Text(remainingOrDurationText)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.60))
                 }
             }
-
-            // Transport Controls
-            HStack(spacing: 16) {
-                Button(action: { isStarred.toggle() }) {
-                    Image(systemName: isStarred ? "star.fill" : "star")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(isStarred ? Color.yellow : Color.white.opacity(0.50))
-                }
-                .buttonStyle(PressableButtonStyle())
-                .accessibilityLabel("Favorite")
-
-                Spacer()
-
-                TrayIconButton(system: "backward.fill", label: "Previous track", action: media.previous)
-                TrayIconButton(system: media.playing ? "pause.fill" : "play.fill",
-                               label: media.playing ? "Pause" : "Play",
-                               prominent: true,
-                               size: 28,
-                               action: media.playPause)
-                TrayIconButton(system: "forward.fill", label: "Next track", action: media.next)
-
-                Spacer()
-
-                Image(systemName: "airplayaudio")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.40))
-                    .accessibilityLabel("AirPlay output")
-            }
-            .padding(.horizontal, 8)
         }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    private var remainingOrDurationText: String {
+        if let dur = media.duration, dur > media.livePosition, media.livePosition > 0 {
+            let rem = dur - media.livePosition
+            let m = Int(rem) / 60
+            let s = Int(rem) % 60
+            return String(format: "-%d:%02d", m, s)
+        }
+        return media.durationText
     }
 }
 
 struct TimerExpanded: View {
     @ObservedObject var timer: TimerEngine
+    var onMore: (() -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack {
-                Text(TimerFormat.string(timer.remaining))
-                    .font(.system(size: 28, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.white)
-                Spacer()
-                VStack(alignment: .trailing, spacing: 1) {
-                    if !timer.label.isEmpty {
-                        Text(timer.label)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.70))
-                            .lineLimit(1)
-                    }
-                    Text(timer.state == .done ? "Done" : (timer.state == .paused ? "Paused" : "Focus"))
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(IslandPalette.timer)
-                }
+        HStack(alignment: .center, spacing: 14) {
+            // Left: Amber Circular Timer Badge
+            ZStack {
+                Circle()
+                    .fill(Color(red: 0.96, green: 0.62, blue: 0.04).opacity(0.20))
+                    .frame(width: 58, height: 58)
+                Circle()
+                    .stroke(Color.white.opacity(0.12), lineWidth: 3)
+                    .frame(width: 50, height: 50)
+                Circle()
+                    .trim(from: 0, to: timer.progress)
+                    .stroke(Color(red: 0.96, green: 0.62, blue: 0.04), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .frame(width: 50, height: 50)
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "timer")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.96, green: 0.62, blue: 0.04))
             }
+            .frame(width: 58, height: 58)
 
-            Meter(value: timer.progress, color: IslandPalette.timer, height: 4)
+            // Right: Living Info & Controls Stack
+            VStack(alignment: .leading, spacing: 4) {
+                // Top Row: Label + Action Buttons
+                HStack(spacing: 8) {
+                    Text(timer.label.isEmpty ? "Focus Timer" : timer.label)
+                        .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
 
-            HStack(spacing: 8) {
-                if timer.state == .running {
-                    TrayButton(title: "Pause", action: timer.pause)
-                } else if timer.state == .paused {
-                    TrayButton(title: "Resume", action: timer.resume)
-                } else if timer.state == .done {
-                    TrayButton(title: "Done", action: timer.cancel)
+                    Spacer(minLength: 4)
+
+                    HStack(spacing: 6) {
+                        Button("+1m") { timer.addTime(seconds: 60) }
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.white.opacity(0.10), in: Capsule())
+                            .buttonStyle(PressableButtonStyle())
+
+                        Button("+5m") { timer.addTime(seconds: 300) }
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.white.opacity(0.10), in: Capsule())
+                            .buttonStyle(PressableButtonStyle())
+
+                        Button(action: {
+                            if timer.state == .running { timer.pause() }
+                            else { timer.resume() }
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white.opacity(0.18))
+                                    .frame(width: 28, height: 28)
+                                Image(systemName: timer.state == .paused ? "play.fill" : "pause.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .buttonStyle(PressableButtonStyle())
+
+                        Button(action: { timer.cancel() }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.65))
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(PressableButtonStyle())
+
+                        Button(action: { onMore?() }) {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.60))
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(0.06), in: Capsule())
                 }
-                TrayButton(title: "Cancel", action: timer.cancel)
 
-                Spacer()
+                // Middle Row: Big Digits
+                Text(TimerFormat.string(timer.remaining))
+                    .font(.system(size: 24, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
 
-                Button("+1m") { timer.addTime(seconds: 60) }
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.80))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(.white.opacity(0.08), in: Capsule())
-                    .buttonStyle(PressableButtonStyle())
-
-                Button("+5m") { timer.addTime(seconds: 300) }
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.80))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(.white.opacity(0.08), in: Capsule())
-                    .buttonStyle(PressableButtonStyle())
+                // Bottom Row: Progress meter
+                HStack(spacing: 8) {
+                    Meter(value: timer.progress,
+                          color: Color(red: 0.96, green: 0.62, blue: 0.04),
+                          height: 3)
+                        .frame(maxWidth: .infinity)
+                }
+                .padding(.top, 2)
             }
         }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }
 
@@ -1538,57 +1685,99 @@ struct HarborExpanded: View {
 struct StandbyExpanded: View {
     @ObservedObject var harbor: HarborStore
     @ObservedObject var timer: TimerEngine
+    var onMore: (() -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "tray.and.arrow.down")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(IslandPalette.transfer)
-                Text("Drop files onto the notch to park them")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.70))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.12), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-            )
-
-            HStack(spacing: 8) {
-                Text("FOCUS")
-                    .font(.system(size: 9.5, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.40))
-                    .tracking(0.5)
-
-                Spacer()
-
-                Button("25m") { timer.start(seconds: 25 * 60, label: "Focus") }
-                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+        HStack(alignment: .center, spacing: 14) {
+            // Left: Refined Notcher icon badge
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 0.25, green: 0.45, blue: 0.95), Color(red: 0.60, green: 0.25, blue: 0.85)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 58, height: 58)
+                Image(systemName: "water.waves")
+                    .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .background(IslandPalette.timer.opacity(0.20), in: Capsule())
-                    .buttonStyle(PressableButtonStyle())
+            }
+            .frame(width: 58, height: 58)
+            .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 3)
 
-                Button("15m") { timer.start(seconds: 15 * 60, label: "Short") }
-                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .background(.white.opacity(0.08), in: Capsule())
-                    .buttonStyle(PressableButtonStyle())
+            // Right: Living Info & Controls Stack
+            VStack(alignment: .leading, spacing: 4) {
+                // Top Row: Title + Status + Controls
+                HStack(spacing: 8) {
+                    Text("Notcher")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
 
-                Button("5m") { timer.start(seconds: 5 * 60, label: "Break") }
-                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .background(.white.opacity(0.08), in: Capsule())
+                    Text("Ready")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(red: 0.20, green: 0.84, blue: 0.60))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(red: 0.20, green: 0.84, blue: 0.60).opacity(0.15), in: Capsule())
+
+                    Spacer(minLength: 4)
+
+                    Button(action: { onMore?() }) {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.60))
+                            .frame(width: 26, height: 26)
+                            .background(Color.white.opacity(0.08), in: Circle())
+                    }
                     .buttonStyle(PressableButtonStyle())
+                    .accessibilityLabel("Utilities")
+                }
+
+                // Middle Row: Subtitle
+                Text("MacBook Dynamic Island · Drop files or hover")
+                    .font(.system(size: 11.5, weight: .regular, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .lineLimit(1)
+
+                // Bottom Row: Quick Focus Presets
+                HStack(spacing: 8) {
+                    Text("TIMER")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.40))
+                        .tracking(0.5)
+
+                    Button("25m Focus") { timer.start(seconds: 25 * 60, label: "Focus") }
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color(red: 0.96, green: 0.62, blue: 0.04).opacity(0.25), in: Capsule())
+                        .buttonStyle(PressableButtonStyle())
+
+                    Button("15m") { timer.start(seconds: 15 * 60, label: "Short") }
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(0.08), in: Capsule())
+                        .buttonStyle(PressableButtonStyle())
+
+                    Button("5m") { timer.start(seconds: 5 * 60, label: "Break") }
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(0.08), in: Capsule())
+                        .buttonStyle(PressableButtonStyle())
+                }
+                .padding(.top, 2)
             }
         }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }
 

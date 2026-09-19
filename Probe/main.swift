@@ -561,26 +561,39 @@ struct Probe {
             // body blooms below.
             let slab = IslandMetrics(width: 344, chinH: 32, chinW: 203,
                                      shoulder: 20, bodyH: 48, corner: 24)
-            let bodyMid = CGPoint(x: 220, y: 32 + 20 + 24)
+            let midX = size.width / 2
+            let bodyMid = CGPoint(x: midX, y: 32 + 20 + 24)
             check(IslandMetrics.hitTest(bodyMid, in: size, m: slab), "hittest body center hits")
-            check(IslandMetrics.hitTest(CGPoint(x: 220, y: 16), in: size, m: slab),
+            check(IslandMetrics.hitTest(CGPoint(x: midX, y: 16), in: size, m: slab),
                   "hittest chin covers housing")
             check(!IslandMetrics.hitTest(CGPoint(x: 10, y: 500), in: size, m: slab),
                   "hittest far corner misses")
             check(!IslandMetrics.hitTest(CGPoint(x: 20, y: 40), in: size, m: slab),
                   "hittest beside chin misses")
-            // Body right edge: dx=(440-344)/2=48, right=392, mid-body y=76.
-            check(!IslandMetrics.hitTest(CGPoint(x: 395, y: 76), in: size, m: slab),
+            let rightEdge = (size.width + slab.totalWidth) / 2
+            check(!IslandMetrics.hitTest(CGPoint(x: rightEdge + 3, y: 76), in: size, m: slab),
                   "hittest 3pt outside misses without slop")
-            check(IslandMetrics.hitTest(CGPoint(x: 395, y: 76), in: size, m: slab, slop: 6),
+            check(IslandMetrics.hitTest(CGPoint(x: rightEdge + 3, y: 76), in: size, m: slab, slop: 6),
                   "hittest slop catches boundary")
             // Idle melt: almost nothing hits.
             let idle = IslandMetrics(width: 251, chinH: 32, chinW: 251,
                                      shoulder: 0, bodyH: 8, corner: 8)
-            check(!IslandMetrics.hitTest(CGPoint(x: 220, y: 300), in: size, m: idle),
+            check(!IslandMetrics.hitTest(CGPoint(x: midX, y: 300), in: size, m: idle),
                   "hittest idle ignores deep canvas")
-            check(IslandMetrics.hitTest(CGPoint(x: 220, y: 16), in: size, m: idle),
+            check(IslandMetrics.hitTest(CGPoint(x: midX, y: 16), in: size, m: idle),
                   "hittest idle chin still catches notch taps")
+
+            // Meniscus flare coverage:
+            let flared = IslandMetrics(width: 460, chinH: 32, chinW: 460,
+                                       shoulder: 0, bodyH: 10, corner: 21,
+                                       flareX: 22, flareY: 18)
+            let flaredSize = CGSize(width: flared.totalWidth, height: flared.height)
+            check(IslandMetrics.hitTest(CGPoint(x: flared.totalWidth / 2, y: 20), in: flaredSize, m: flared),
+                  "hittest flared center hits")
+            check(IslandMetrics.hitTest(CGPoint(x: 10, y: 1), in: flaredSize, m: flared),
+                  "hittest flared meniscus top-left corner hits")
+            check(!IslandMetrics.hitTest(CGPoint(x: 2, y: 1), in: flaredSize, m: flared),
+                  "hittest flared outside concave shoulder misses")
 
             // 2. AppKit view-level hit-test and context menu verification:
             let ctl = IslandController()
